@@ -1,0 +1,38 @@
+name: PrintessFlow Build
+
+# Custom build pipeline for the PrintessFlow fork. Self-contained: builds from the
+# local source via Conan on GitHub-hosted runners (no UltiMaker self-hosted runners,
+# no UltiMaker credentials). Manual trigger only.
+on:
+  workflow_dispatch:
+
+jobs:
+  resolve-deps:
+    name: Resolve Conan dependencies (anonymous access check)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Conan
+        run: |
+          pip install "conan>=2.7,<3"
+          conan --version
+
+      - name: Configure Conan (UltiMaker remotes, no login)
+        run: |
+          conan profile detect -f
+          conan config install https://github.com/Ultimaker/conan-config.git
+          echo "=== remotes ==="
+          conan remote list
+
+      - name: Resolve dependency graph (recipes only, no build)
+        run: |
+          set -o pipefail
+          conan graph info . --filter=ref 2>&1 | tee graph.txt
+          echo "=== RESOLVE OK ==="
