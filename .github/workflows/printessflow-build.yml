@@ -28,8 +28,9 @@ jobs:
           Add-MpPreference -ExclusionPath "$env:USERPROFILE\.conan2"
           Add-MpPreference -ExclusionProcess "conan.exe"
 
-      - name: Cache Conan packages
-        uses: actions/cache@v4
+      - name: Restore Conan cache
+        id: conan-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/.conan2/p
           key: conan-windows-${{ hashFiles('conanfile.py', 'conandata.yml') }}
@@ -43,11 +44,13 @@ jobs:
           profile: installer.jinja
 
       - name: Conan install (build PrintessFlow from local source)
-        # Throwaway Sentry token: satisfies the curaengine/arcus/clipper validate()
-        # so their package IDs match UltiMaker's PREBUILT binaries (downloaded, not
-        # compiled from source). We configure no real telemetry. A clean Sentry-off
-        # build (compiles from source, slow but cached) can be done later for release.
-        run: conan install . --build=missing --update -of cura_inst --deployer-package="*" --profile ${{ steps.set-overrides.outputs.profile }} -c user.sentry:token=none
+        # Throwaway Sentry token satisfies the validate() so package IDs still match
+        # UltiMaker's prebuilt binaries where possible. But when curaengine/arcus DO
+        # compile from source (no prebuilt for this runner's MSVC), their build tries
+        # to upload debug symbols to UltiMaker's Sentry and 401s on the fake token, so
+        # disable the upload sub-options. (A clean Sentry-off release build can come
+        # later.)
+        run: conan install . --build=missing --update -of cura_inst --deployer-package="*" --profile ${{ steps.set-overrides.outputs.profile }} -c user.sentry:token=none -o curaengine/*:sentry_send_binaries=False -o curaengine/*:sentry_create_release=False -o arcus/*:sentry_send_binaries=False
 
       - name: Create the distribution with PyInstaller
         id: prepare-distribution
@@ -97,3 +100,12 @@ jobs:
           path: dist/${{ steps.prepare-distribution.outputs.INSTALLER_FILENAME }}.exe
           retention-days: 7
           if-no-files-found: warn
+
+      - name: Save Conan cache
+        # Runs even if an earlier step failed, so the expensive from-source dependency
+        # build (OpenSSL/curaengine/etc.) is banked and future runs are fast.
+        if: ${{ always() && steps.conan-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.conan2/p
+          key: conan-windows-${{ hashFiles('conanfile.py', 'conandata.yml') }}
