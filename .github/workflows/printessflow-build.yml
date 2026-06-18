@@ -3,13 +3,24 @@ name: PrintessFlow Build
 # Custom from-source build pipeline for the PrintessFlow fork. Self-contained:
 # builds the LOCAL source via Conan on GitHub-hosted runners using UltiMaker's
 # public Conan packages anonymously (no UltiMaker credentials, no self-hosted
-# runners). Manual trigger only.
+# runners, no UltiMaker Sentry). Manual trigger only.
 on:
   workflow_dispatch:
 
+# Sentry is force-enabled by UltiMaker's installer profile and points at their
+# crash-reporting server (and requires their token). Disable it for the fork.
+env:
+  SENTRY_OFF: >-
+    -o curaengine/*:enable_sentry=False
+    -o curaengine/*:sentry_send_binaries=False
+    -o curaengine/*:sentry_create_release=False
+    -o arcus/*:enable_sentry=False
+    -o arcus/*:sentry_send_binaries=False
+    -o clipper/*:enable_sentry=False
+
 jobs:
   build-windows:
-    name: Windows build (validate conan install of local source)
+    name: Windows installer (unsigned)
     runs-on: windows-2022
     steps:
       - name: Set up build environment (UltiMaker action, anonymous Conan)
@@ -18,6 +29,13 @@ jobs:
         with:
           install_system_dependencies: true
 
+      - name: Cache Conan packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2/p
+          key: conan-windows-${{ hashFiles('conanfile.py', 'conandata.yml') }}
+          restore-keys: conan-windows-
+
       - name: Set package overrides (installer profile)
         id: set-overrides
         uses: ultimaker/cura-workflows/.github/actions/set-package-overrides@main
@@ -25,16 +43,54 @@ jobs:
           package_overrides: ''
           profile: installer.jinja
 
-      - name: Conan install (build PrintessFlow from local source)
-        run: conan install . --build=missing --update -of cura_inst --deployer-package="*" --profile ${{ steps.set-overrides.outputs.profile }}
+      - name: Conan install (build PrintessFlow from local source, Sentry off)
+        run: conan install . --build=missing --update -of cura_inst --deployer-package="*" --profile ${{ steps.set-overrides.outputs.profile }} ${{ env.SENTRY_OFF }}
 
-      - name: Show generated build files
-        if: always()
-        shell: bash
+      - name: Create the distribution with PyInstaller
+        id: prepare-distribution
+        shell: cmd
         run: |
-          echo "=== cura_inst top level ==="
-          ls -la cura_inst || true
-          echo "=== pyinstaller spec present? ==="
-          ls -la cura_inst/UltiMaker-Cura.spec || true
-          echo "=== packaging dir ==="
-          ls -la cura_inst/packaging || true
+          call cura_inst\conanrun.bat
+          python -m venv cura_installer_venv
+          call cura_installer_venv\Scripts\Activate.bat
+          python -m pip install -r cura_inst\packaging\pip_requirements_core_basic.txt --no-warn-script-location
+          python -m pip install -r cura_inst\packaging\pip_requirements_core_hashes.txt --no-warn-script-location
+          python -m pip install -r cura_inst\packaging\pip_requirements_installer_basic.txt --no-warn-script-location
+          python Cura-workflows\runner_scripts\prepare_installer.py --os Windows --architecture X64 --summary-output %GITHUB_STEP_SUMMARY% --variables-output %GITHUB_OUTPUT%
+          pyinstaller cura_inst\UltiMaker-Cura.spec
+
+      - name: Workaround - copy exact MSVC redistributables
+        run: |
+          $PRE_MSDIR="C:/Program Files/Microsoft Visual Studio"
+          $SELECT_MSDIR=(dir $PRE_MSDIR)[0].FullName
+          $MSDIR=$SELECT_MSDIR+"/Community/VC/Redist/MSVC"
+          $MSDIR_R=(dir -Exclude "v*" $MSDIR | Sort-Object Name -Descending)[0].FullName
+          $MSDIR_DLLS=(dir $MSDIR_R/x64/Microsoft.VC*.CRT)[0].FullName
+          copy $MSDIR_DLLS/concrt140.dll dist/UltiMaker-Cura/.
+          copy $MSDIR_DLLS/msvcp140.dll dist/UltiMaker-Cura/.
+          copy $MSDIR_DLLS/msvcp140_1.dll dist/UltiMaker-Cura/.
+          copy $MSDIR_DLLS/msvcp140_2.dll dist/UltiMaker-Cura/.
+          copy $MSDIR_DLLS/vcruntime140.dll dist/UltiMaker-Cura/.
+          copy $MSDIR_DLLS/vcruntime140_1.dll dist/UltiMaker-Cura/.
+
+      - name: Workaround - python3 dll
+        run: copy Cura-workflows/python_dll_workaround/* dist/UltiMaker-Cura/.
+
+      - name: Trim unused Qt files
+        working-directory: dist/UltiMaker-Cura
+        run: |
+          $patterns = @("*assimp*","*qt6charts*","*qt6coap*","*qt6datavis*","*qt6labsani*","*qt6mqtt*","*qt6networkauth*","*quick3d*","*qt6timeline*","*qt6virtualkey*","*waylandcomp*","*qt5compat*")
+          foreach ($p in $patterns) { Remove-Item .\* -Include $p -Recurse -Force -ErrorAction SilentlyContinue }
+
+      - name: Create the Windows exe installer (NSIS)
+        working-directory: dist
+        run: python ..\cura_inst\packaging\NSIS\create_windows_installer.py --source_path ../cura_inst --dist_path . --filename "${{ steps.prepare-distribution.outputs.INSTALLER_FILENAME }}.exe" --version "${{ steps.prepare-distribution.outputs.CURA_VERSION_FULL }}"
+
+      - name: Upload the installer (unsigned)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrintessFlow-Windows-exe
+          path: dist/${{ steps.prepare-distribution.outputs.INSTALLER_FILENAME }}.exe
+          retention-days: 7
+          if-no-files-found: warn
