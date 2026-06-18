@@ -18,6 +18,16 @@ jobs:
         with:
           install_system_dependencies: true
 
+      - name: Speed up Windows file I/O (exclude Conan cache from Defender)
+        # OpenSSL/msys2 extract tens of thousands of tiny files; Windows Defender
+        # real-time scanning makes that extraction crawl. Excluding the Conan cache
+        # directory (and the conan process) cuts it from many minutes to seconds.
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Add-MpPreference -ExclusionPath "$env:USERPROFILE\.conan2"
+          Add-MpPreference -ExclusionProcess "conan.exe"
+
       - name: Cache Conan packages
         uses: actions/cache@v4
         with:
