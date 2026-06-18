@@ -97,14 +97,17 @@ jobs:
 
       - name: Create the Windows exe installer (NSIS)
         working-directory: dist
-        run: python ..\cura_inst\packaging\NSIS\create_windows_installer.py --source_path ../cura_inst --dist_path . --filename "${{ steps.prepare-distribution.outputs.INSTALLER_FILENAME }}.exe" --version "${{ steps.prepare-distribution.outputs.CURA_VERSION_FULL }}"
+        # prepare_installer.py's GITHUB_OUTPUT vars come back empty here (it imports the
+        # source CuraVersion placeholder), so use the Conan package version, which is a
+        # valid SemVer (e.g. 5.14.0-alpha.0) and what the build already resolved.
+        run: python ..\cura_inst\packaging\NSIS\create_windows_installer.py --source_path ../cura_inst --dist_path . --filename "PrintessFlow-${{ steps.setup-environment.outputs.package_version }}-win64-X64.exe" --version "${{ steps.setup-environment.outputs.package_version }}"
 
       - name: Upload the installer (unsigned)
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: PrintessFlow-Windows-exe
-          path: dist/${{ steps.prepare-distribution.outputs.INSTALLER_FILENAME }}.exe
+          path: dist/PrintessFlow-${{ steps.setup-environment.outputs.package_version }}-win64-X64.exe
           retention-days: 7
           if-no-files-found: warn
 
