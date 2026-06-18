@@ -130,6 +130,13 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      - name: Prune Conan cache (drop build/source/temp folders)
+        if: ${{ always() }}
+        # Strip temporary build/source/download folders (msys2 extraction, OpenSSL
+        # build trees, etc.), keeping only the final package binaries. Dramatically
+        # shrinks the cache, speeding up both the save below and the restore next run.
+        run: conan cache clean "*"
+
       - name: Save Conan cache
         # Runs even if an earlier step failed, so the expensive from-source dependency
         # build (OpenSSL/curaengine/etc.) is banked and future runs are fast.
