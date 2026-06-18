@@ -46,10 +46,6 @@ pyinstaller:
             src: "res/bundled_packages"
             dst: "share/cura/resources/bundled_packages"
             enterprise_only: true
-        cura_resources:
-            package: "cura"
-            src: "resources"
-            dst: "share/cura/resources"
         cura_shared_resources:
             package: "cura_resources"
             src: "res"
@@ -84,6 +80,15 @@ pyinstaller:
             package: "fdm_materials"
             src: "res/resources/materials"
             dst: "share/cura/resources/materials"
+        # MUST be last among share/cura/resources writers: our forked
+        # cura/resources overrides any files UltiMaker's prebuilt cura_binary_data
+        # / cura_resources also ship there (splash cura.png, window icon
+        # cura-icon.png, themes). PyInstaller data dedup is last-one-wins, so this
+        # entry has to come after cura_binary_data to take precedence.
+        cura_resources:
+            package: "cura"
+            src: "resources"
+            dst: "share/cura/resources"
     binaries:
         curaengine:
             package: "curaengine"

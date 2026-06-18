@@ -84,6 +84,20 @@ jobs:
           python Cura-workflows\runner_scripts\prepare_installer.py --os Windows --architecture X64 --summary-output %GITHUB_STEP_SUMMARY% --variables-output %GITHUB_OUTPUT%
           pyinstaller cura_inst\UltiMaker-Cura.spec
 
+      - name: Apply PrintessFlow resource overrides (splash + app icons)
+        # UltiMaker's prebuilt cura_binary_data ships stock splash/icon PNGs into
+        # share/cura/resources/images and, being later in the bundle order, wins
+        # over our forked resources during PyInstaller bundling (last-one-wins).
+        # The conandata.yml reorder makes ours win, but force-copy here too so the
+        # branded splash + window/tray icon are guaranteed regardless of ordering.
+        shell: pwsh
+        run: |
+          $dst = "dist/PrintessFlow/share/cura/resources/images"
+          foreach ($img in @("cura.png","cura_wip.png","cura_enterprise.png","cura-icon.png","cura-icon-32.png")) {
+            Copy-Item "resources/images/$img" "$dst/$img" -Force
+            Write-Host "overrode $dst/$img"
+          }
+
       - name: Workaround - copy MSVC redistributables
         # GitHub's hosted runner ships VS Enterprise (UltiMaker's runner has Community),
         # so the hardcoded \Community\ path doesn't exist. Locate the VC++ x64 CRT
