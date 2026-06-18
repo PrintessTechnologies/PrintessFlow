@@ -11,6 +11,15 @@ jobs:
   build-windows:
     name: Windows installer (unsigned)
     runs-on: windows-2022
+    env:
+      # Sentry: keep it "enabled" (throwaway token) so package IDs match UltiMaker's
+      # prebuilt binaries where possible, but disable the symbol-upload sub-options so
+      # from-source builds don't 401 pushing to UltiMaker's Sentry.
+      CONAN_SENTRY_OPTS: >-
+        -c user.sentry:token=none
+        -o curaengine/*:sentry_send_binaries=False
+        -o curaengine/*:sentry_create_release=False
+        -o arcus/*:sentry_send_binaries=False
     steps:
       - name: Set up build environment (UltiMaker action, anonymous Conan)
         id: setup-environment
@@ -43,14 +52,15 @@ jobs:
           package_overrides: ''
           profile: installer.jinja
 
-      - name: Conan install (build PrintessFlow from local source)
-        # Throwaway Sentry token satisfies the validate() so package IDs still match
-        # UltiMaker's prebuilt binaries where possible. But when curaengine/arcus DO
-        # compile from source (no prebuilt for this runner's MSVC), their build tries
-        # to upload debug symbols to UltiMaker's Sentry and 401s on the fake token, so
-        # disable the upload sub-options. (A clean Sentry-off release build can come
-        # later.)
-        run: conan install . --build=missing --update -of cura_inst --deployer-package="*" --profile ${{ steps.set-overrides.outputs.profile }} -c user.sentry:token=none -o curaengine/*:sentry_send_binaries=False -o curaengine/*:sentry_create_release=False -o arcus/*:sentry_send_binaries=False
+      - name: Conan create (build + package PrintessFlow from local source)
+        # Cura's deploy() needs a real package (package_folder + resdirs). `conan
+        # install .` on the local recipe never packages cura, so package_folder is
+        # None and deploy() crashes (TypeError at resdirs[2]). Mirror UltiMaker:
+        # create the package locally first, then install --requires it (next step).
+        run: conan create . --build=missing --update -tf="" --profile ${{ steps.set-overrides.outputs.profile }} ${{ env.CONAN_SENTRY_OPTS }}
+
+      - name: Conan install (deploy the package, generate installer files)
+        run: conan install --requires "cura/${{ steps.setup-environment.outputs.package_version }}" --build=missing --update -of cura_inst --deployer-package="*" --profile ${{ steps.set-overrides.outputs.profile }} ${{ env.CONAN_SENTRY_OPTS }}
 
       - name: Create the distribution with PyInstaller
         id: prepare-distribution
