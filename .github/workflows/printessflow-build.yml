@@ -7,17 +7,6 @@ name: PrintessFlow Build
 on:
   workflow_dispatch:
 
-# Sentry is force-enabled by UltiMaker's installer profile and points at their
-# crash-reporting server (and requires their token). Disable it for the fork.
-env:
-  SENTRY_OFF: >-
-    -o curaengine/*:enable_sentry=False
-    -o curaengine/*:sentry_send_binaries=False
-    -o curaengine/*:sentry_create_release=False
-    -o arcus/*:enable_sentry=False
-    -o arcus/*:sentry_send_binaries=False
-    -o clipper/*:enable_sentry=False
-
 jobs:
   build-windows:
     name: Windows installer (unsigned)
@@ -43,8 +32,12 @@ jobs:
           package_overrides: ''
           profile: installer.jinja
 
-      - name: Conan install (build PrintessFlow from local source, Sentry off)
-        run: conan install . --build=missing --update -of cura_inst --deployer-package="*" --profile ${{ steps.set-overrides.outputs.profile }} ${{ env.SENTRY_OFF }}
+      - name: Conan install (build PrintessFlow from local source)
+        # Throwaway Sentry token: satisfies the curaengine/arcus/clipper validate()
+        # so their package IDs match UltiMaker's PREBUILT binaries (downloaded, not
+        # compiled from source). We configure no real telemetry. A clean Sentry-off
+        # build (compiles from source, slow but cached) can be done later for release.
+        run: conan install . --build=missing --update -of cura_inst --deployer-package="*" --profile ${{ steps.set-overrides.outputs.profile }} -c user.sentry:token=none
 
       - name: Create the distribution with PyInstaller
         id: prepare-distribution
