@@ -75,19 +75,16 @@ jobs:
           python Cura-workflows\runner_scripts\prepare_installer.py --os Windows --architecture X64 --summary-output %GITHUB_STEP_SUMMARY% --variables-output %GITHUB_OUTPUT%
           pyinstaller cura_inst\UltiMaker-Cura.spec
 
-      - name: Workaround - copy exact MSVC redistributables
+      - name: Workaround - copy MSVC redistributables
+        # GitHub's hosted runner ships VS Enterprise (UltiMaker's runner has Community),
+        # so the hardcoded \Community\ path doesn't exist. Locate the VC++ x64 CRT
+        # redistributable folder regardless of edition/version and copy its DLLs.
         run: |
-          $PRE_MSDIR="C:/Program Files/Microsoft Visual Studio"
-          $SELECT_MSDIR=(dir $PRE_MSDIR)[0].FullName
-          $MSDIR=$SELECT_MSDIR+"/Community/VC/Redist/MSVC"
-          $MSDIR_R=(dir -Exclude "v*" $MSDIR | Sort-Object Name -Descending)[0].FullName
-          $MSDIR_DLLS=(dir $MSDIR_R/x64/Microsoft.VC*.CRT)[0].FullName
-          copy $MSDIR_DLLS/concrt140.dll dist/UltiMaker-Cura/.
-          copy $MSDIR_DLLS/msvcp140.dll dist/UltiMaker-Cura/.
-          copy $MSDIR_DLLS/msvcp140_1.dll dist/UltiMaker-Cura/.
-          copy $MSDIR_DLLS/msvcp140_2.dll dist/UltiMaker-Cura/.
-          copy $MSDIR_DLLS/vcruntime140.dll dist/UltiMaker-Cura/.
-          copy $MSDIR_DLLS/vcruntime140_1.dll dist/UltiMaker-Cura/.
+          $crt = Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio\2022" -Recurse -Directory -Filter "Microsoft.VC*.CRT" -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $crt) { throw "Could not locate VC++ x64 CRT redistributable DLLs" }
+          Write-Host "Copying CRT DLLs from: $($crt.FullName)"
+          Copy-Item "$($crt.FullName)\*.dll" "dist/UltiMaker-Cura/"
 
       - name: Workaround - python3 dll
         run: copy Cura-workflows/python_dll_workaround/* dist/UltiMaker-Cura/.
