@@ -93,13 +93,13 @@ jobs:
             Where-Object { $_.FullName -match '\\x64\\' } | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $crt) { throw "Could not locate VC++ x64 CRT redistributable DLLs" }
           Write-Host "Copying CRT DLLs from: $($crt.FullName)"
-          Copy-Item "$($crt.FullName)\*.dll" "dist/UltiMaker-Cura/"
+          Copy-Item "$($crt.FullName)\*.dll" "dist/PrintessFlow/"
 
       - name: Workaround - python3 dll
-        run: copy Cura-workflows/python_dll_workaround/* dist/UltiMaker-Cura/.
+        run: copy Cura-workflows/python_dll_workaround/* dist/PrintessFlow/.
 
       - name: Trim unused Qt files
-        working-directory: dist/UltiMaker-Cura
+        working-directory: dist/PrintessFlow
         run: |
           $patterns = @("*assimp*","*qt6charts*","*qt6coap*","*qt6datavis*","*qt6labsani*","*qt6mqtt*","*qt6networkauth*","*quick3d*","*qt6timeline*","*qt6virtualkey*","*waylandcomp*","*qt5compat*")
           foreach ($p in $patterns) { Remove-Item .\* -Include $p -Recurse -Force -ErrorAction SilentlyContinue }
@@ -113,7 +113,7 @@ jobs:
         run: |
           $pkg = "packaging/printessflow"
           New-Item -ItemType Directory -Force -Path "$pkg/app" | Out-Null
-          Copy-Item -Recurse -Force dist/UltiMaker-Cura/* "$pkg/app/"
+          Copy-Item -Recurse -Force dist/PrintessFlow/* "$pkg/app/"
           $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
           if (-not (Test-Path $makensis)) { $makensis = "makensis" }
           Push-Location $pkg
