@@ -6,10 +6,20 @@ name: PrintessFlow Build
 # runners, no UltiMaker Sentry). Manual trigger only.
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Which installers to build'
+        type: choice
+        options:
+          - both
+          - windows
+          - macos
+        default: both
 
 jobs:
   build-windows:
     name: Windows installer (unsigned)
+    if: ${{ inputs.platform == 'both' || inputs.platform == 'windows' }}
     runs-on: windows-2022
     env:
       # Sentry: keep it "enabled" (throwaway token) so package IDs match UltiMaker's
@@ -159,3 +169,100 @@ jobs:
         with:
           path: ~/.conan2/p
           key: conan-windows-${{ hashFiles('conanfile.py', 'conandata.yml') }}
+
+  build-macos:
+    # Apple Silicon (arm64) only. UNSIGNED validation pass: build the app + .dmg
+    # from local source to confirm packaging. Signing + notarization (secrets
+    # MAC_CERT_P12 / MAC_CERT_PASSWORD / APPLE_TEAM_ID / NOTARY_* are already in
+    # the repo) will be layered on once this packaging is confirmed working.
+    name: macOS installer (arm64, unsigned)
+    if: ${{ inputs.platform == 'both' || inputs.platform == 'macos' }}
+    runs-on: macos-14
+    env:
+      CONAN_SENTRY_OPTS: >-
+        -c user.sentry:token=none
+        -o curaengine/*:sentry_send_binaries=False
+        -o curaengine/*:sentry_create_release=False
+        -o arcus/*:sentry_send_binaries=False
+        -o cura/*:display_name=PrintessFlow
+    steps:
+      - name: Set up build environment (UltiMaker action, anonymous Conan)
+        id: setup-environment
+        uses: ultimaker/cura-workflows/.github/actions/setup-build-environment@main
+        with:
+          install_system_dependencies: true
+
+      - name: Restore Conan cache
+        id: conan-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.conan2/p
+          key: conan-macos-arm64-${{ hashFiles('conanfile.py', 'conandata.yml') }}
+          restore-keys: conan-macos-arm64-
+
+      - name: Set package overrides (installer profile)
+        id: set-overrides
+        uses: ultimaker/cura-workflows/.github/actions/set-package-overrides@main
+        with:
+          package_overrides: ''
+          profile: installer.jinja
+
+      - name: Generate source-tree files (CuraVersion.py)
+        run: conan install . --build=missing --update --profile ${{ steps.set-overrides.outputs.profile }} ${{ env.CONAN_SENTRY_OPTS }}
+
+      - name: Conan create (build + package PrintessFlow from local source)
+        run: conan create . --build=missing --update -tf="" --profile ${{ steps.set-overrides.outputs.profile }} ${{ env.CONAN_SENTRY_OPTS }}
+
+      - name: Conan install (deploy the package, generate installer files)
+        run: conan install --requires "cura/${{ steps.setup-environment.outputs.package_version }}" --build=missing --update -of cura_inst --deployer-package="*" --profile ${{ steps.set-overrides.outputs.profile }} ${{ env.CONAN_SENTRY_OPTS }}
+
+      - name: Create the distribution with PyInstaller
+        id: prepare-distribution
+        run: |
+          source cura_inst/conanrun.sh
+          python -m venv cura_installer_venv
+          source cura_installer_venv/bin/activate
+          python -m pip install -r cura_inst/packaging/pip_requirements_core_basic.txt --no-warn-script-location
+          python -m pip install -r cura_inst/packaging/pip_requirements_core_hashes.txt --no-warn-script-location
+          python -m pip install -r cura_inst/packaging/pip_requirements_installer_basic.txt --no-warn-script-location
+          python Cura-workflows/runner_scripts/prepare_installer.py --os Macos --architecture ARM64 --summary-output $GITHUB_STEP_SUMMARY --variables-output $GITHUB_OUTPUT
+          pyinstaller cura_inst/UltiMaker-Cura.spec
+
+      - name: Apply PrintessFlow resource overrides (splash + app icons)
+        # Same cura_binary_data override fix as Windows: force our branded splash
+        # and icons over whatever got bundled, wherever PyInstaller placed the
+        # resources tree inside the .app.
+        run: |
+          IMGDIR=$(find "dist/PrintessFlow.app" -type d -path "*share/cura/resources/images" | head -1)
+          echo "images dir: $IMGDIR"
+          for img in cura.png cura_wip.png cura_enterprise.png cura-icon.png cura-icon-32.png; do
+            cp -f "resources/images/$img" "$IMGDIR/$img"
+          done
+
+      - name: Build unsigned .dmg
+        run: |
+          mkdir -p dmg_stage
+          cp -R "dist/PrintessFlow.app" dmg_stage/
+          ln -s /Applications dmg_stage/Applications
+          hdiutil create -volname "PrintessFlow" -srcfolder dmg_stage -ov -format UDZO "PrintessFlow-macOS-arm64.dmg"
+          hdiutil verify "PrintessFlow-macOS-arm64.dmg"
+
+      - name: Upload the installer (unsigned)
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrintessFlow-macOS-arm64
+          path: PrintessFlow-macOS-arm64.dmg
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Prune Conan cache (drop build/source/temp folders)
+        if: ${{ always() }}
+        run: conan cache clean "*"
+
+      - name: Save Conan cache
+        if: ${{ always() && steps.conan-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.conan2/p
+          key: conan-macos-arm64-${{ hashFiles('conanfile.py', 'conandata.yml') }}
