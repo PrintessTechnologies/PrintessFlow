@@ -2217,12 +2217,11 @@ class CuraApplication(QtApplication):
 
     @pyqtSlot(result = bool)
     def shouldShowWhatsNewDialog(self) -> bool:
-        has_active_machine = self._machine_manager.activeMachine is not None
-        has_app_just_upgraded = self.hasJustUpdatedFromOldVersion()
-
-        # Only show the what's new dialog if there's no machine and we have just upgraded
-        show_whatsnew_only = has_active_machine and has_app_just_upgraded
-        return show_whatsnew_only
+        # PrintessFlow: this is a pre-configured appliance build. Never show the
+        # stock UltiMaker "What's New" dialog (Factor 4 marketing page + "Release
+        # Notes" changelog page), which would otherwise pop up on first launch
+        # because the seeded 5.12 config upgrades to 5.14 (looks like an update).
+        return False
 
     @pyqtSlot(result = int)
     def appWidth(self) -> int:
