@@ -851,8 +851,7 @@ class PrintessOneAtATime(Script):
         X/Y are gated on printess/home_xy; Z on (printess/home_za and extruder 0 prints);
         A on (printess/home_za and extruder 1 prints) — T0 uses the real Z axis, T1's Z is
         renamed to A. Offsets come from printess/zero_offset_{x,y,z,a} (mm from the endstop).
-        The G92 always includes every relevant axis: homed axes use (post-home position -
-        offset), and un-homed axes are declared as 0. B (T0) and C (T1) are always zeroed.
+        Only axes that were homed are placed in the G92; B (T0) and C (T1) are always zeroed.
         Returned as a '\\n'-joined string with no trailing newline.
         """
         from UM.Application import Application
@@ -890,21 +889,17 @@ class PrintessOneAtATime(Script):
         if home_axes:
             lines.append('G28 ' + ' '.join(home_axes))
 
-        # Declare the zero-offset origin without moving. Homed axes use their known
-        # post-home position minus the zero-offset; un-homed axes are declared as 0 (the
-        # current position is simply taken as the origin). X/Y are always present; Z is
-        # included when extruder 0 prints and A when extruder 1 prints; the extruder axes
-        # B (T0) and C (T1) are always zeroed.
+        # Declare the zero-offset origin at the known post-home position without moving:
+        # each value is (post-home position - offset). Only homed axes are included; the
+        # extruder axes B (T0) and C (T1) are always zeroed.
         g92 = []
         if home_xy:
             g92.append(f'X{PLATE_CENTER_X - _num("printess/zero_offset_x"):.3f}')
             g92.append(f'Y{PLATE_CENTER_Y - _num("printess/zero_offset_y"):.3f}')
-        else:
-            g92 += ['X0', 'Y0']
-        if has_t0:
-            g92.append(f'Z{G28_HOP - _num("printess/zero_offset_z"):.3f}' if z_active else 'Z0')
-        if has_t1:
-            g92.append(f'A{G28_HOP - _num("printess/zero_offset_a"):.3f}' if a_active else 'A0')
+        if z_active:
+            g92.append(f'Z{G28_HOP - _num("printess/zero_offset_z"):.3f}')
+        if a_active:
+            g92.append(f'A{G28_HOP - _num("printess/zero_offset_a"):.3f}')
         g92 += ['B0', 'C0']
         lines.append('G92 ' + ' '.join(g92))
 
