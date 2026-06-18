@@ -179,6 +179,11 @@ jobs:
     if: ${{ inputs.platform == 'both' || inputs.platform == 'macos' }}
     runs-on: macos-14
     env:
+      # The macOS runner ships CMake 4.x, which removed compatibility with
+      # cmake_minimum_required(VERSION < 3.5). Some from-source Conan deps
+      # (e.g. nlopt 2.7.1) still declare an ancient minimum and fail to
+      # configure. This env var tells CMake to treat those as 3.5 and proceed.
+      CMAKE_POLICY_VERSION_MINIMUM: "3.5"
       CONAN_SENTRY_OPTS: >-
         -c user.sentry:token=none
         -o curaengine/*:sentry_send_binaries=False
