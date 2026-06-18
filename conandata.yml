@@ -1,4 +1,4 @@
-version: "5.14.0-alpha.0"
+version: "5.14.0"
 commit: "unknown"
 requirements:
   - "cura_resources/5.14.0-alpha.0@ultimaker/testing"

@@ -20,6 +20,7 @@ jobs:
         -o curaengine/*:sentry_send_binaries=False
         -o curaengine/*:sentry_create_release=False
         -o arcus/*:sentry_send_binaries=False
+        -o cura/*:display_name=PrintessFlow
     steps:
       - name: Set up build environment (UltiMaker action, anonymous Conan)
         id: setup-environment
@@ -103,19 +104,29 @@ jobs:
           $patterns = @("*assimp*","*qt6charts*","*qt6coap*","*qt6datavis*","*qt6labsani*","*qt6mqtt*","*qt6networkauth*","*quick3d*","*qt6timeline*","*qt6virtualkey*","*waylandcomp*","*qt5compat*")
           foreach ($p in $patterns) { Remove-Item .\* -Include $p -Recurse -Force -ErrorAction SilentlyContinue }
 
-      - name: Create the Windows exe installer (NSIS)
-        working-directory: dist
-        # prepare_installer.py's GITHUB_OUTPUT vars come back empty here (it imports the
-        # source CuraVersion placeholder), so use the Conan package version, which is a
-        # valid SemVer (e.g. 5.14.0-alpha.0) and what the build already resolved.
-        run: python ..\cura_inst\packaging\NSIS\create_windows_installer.py --source_path ../cura_inst --dist_path . --filename "PrintessFlow-${{ steps.setup-environment.outputs.package_version }}-win64-X64.exe" --version "${{ steps.setup-environment.outputs.package_version }}"
+      - name: Build the PrintessFlow installer (NSIS - branded, pre-seeded)
+        shell: pwsh
+        # Stage the built app payload into the packaging dir, then run our custom
+        # NSIS installer which rebrands the exe, bundles the pre-seeded machine/
+        # profiles + licenses, and launches with APPDATA redirected to the
+        # install-local data folder (so it opens pre-configured, no add-printer).
+        run: |
+          $pkg = "packaging/printessflow"
+          New-Item -ItemType Directory -Force -Path "$pkg/app" | Out-Null
+          Copy-Item -Recurse -Force dist/UltiMaker-Cura/* "$pkg/app/"
+          $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          if (-not (Test-Path $makensis)) { $makensis = "makensis" }
+          Push-Location $pkg
+          & $makensis /V3 PrintessFlow.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }
+          Pop-Location
 
       - name: Upload the installer (unsigned)
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: PrintessFlow-Windows-exe
-          path: dist/PrintessFlow-${{ steps.setup-environment.outputs.package_version }}-win64-X64.exe
+          name: PrintessFlow-Windows-Setup
+          path: packaging/printessflow/PrintessFlow-Setup.exe
           retention-days: 7
           if-no-files-found: warn
 

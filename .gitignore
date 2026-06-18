@@ -105,3 +105,7 @@ Ultimaker-Cura.spec
 /resources/bundled_packages/bundled_*.json
 curaengine_plugin_gradual_flow
 curaengine_plugin_gradual_flow.exe
+
+# PrintessFlow installer staging (CI-generated)
+packaging/printessflow/app/
+packaging/printessflow/*.exe

@@ -1,0 +1,7 @@
+{
+    "name": "PrintessIconFix",
+    "author": "Printess Technologies",
+    "version": "1.0.0",
+    "description": "Sets the correct window and application icon for PrintessFlow.",
+    "api": 8
+}
