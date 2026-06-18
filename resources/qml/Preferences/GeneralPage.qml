@@ -299,7 +299,10 @@ UM.PreferencesPage
                         var themes = UM.Theme.getThemes()
                         for (var i = 0; i < themes.length; i++)
                         {
-                            append({ text: themes[i].name.toString(), code: themes[i].id.toString() });
+                            if (themes[i].id.toString().indexOf("dark") === -1 && themes[i].id.toString() !== "default")
+                            {
+                                append({ text: themes[i].name.toString(), code: themes[i].id.toString() });
+                            }
                         }
                     }
                 }

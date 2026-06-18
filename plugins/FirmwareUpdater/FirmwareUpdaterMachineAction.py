@@ -37,9 +37,7 @@ class FirmwareUpdaterMachineAction(MachineAction):
         CuraApplication.getInstance().getMachineManager().outputDevicesChanged.connect(self._onOutputDevicesChanged)
 
     def _onContainerAdded(self, container: "ContainerInterface") -> None:
-        # Add this action as a supported action to all machine definitions if they support USB connection
-        if isinstance(container, DefinitionContainer) and container.getMetaDataEntry("type") == "machine" and container.getMetaDataEntry("supports_usb_connection"):
-            CuraApplication.getInstance().getMachineActionManager().addSupportedAction(container.getId(), self.getKey())
+        pass
 
     def _onOutputDevicesChanged(self) -> None:
         if self._active_output_device and self._active_output_device.activePrinter:

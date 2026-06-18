@@ -35,6 +35,7 @@ class PostProcessingPlugin(QObject, Extension):
         self.setMenuName(i18n_catalog.i18nc("@item:inmenu", "Post Processing"))
         self.addMenuItem(i18n_catalog.i18nc("@item:inmenu", "Modify G-Code"), self.showPopup)
         self._view = None
+        self._selector_view = None  # kept alive to prevent GC
 
         # Loaded scripts are all scripts that can be used
         self._loaded_scripts = {}  # type: Dict[str, Type[Script]]
@@ -246,6 +247,32 @@ class PostProcessingPlugin(QObject, Extension):
         script_list = [script.getSettingData()["key"] for script in self._script_list]
         return script_list
 
+    @pyqtProperty(str, notify=scriptListChanged)
+    def printessActiveScript(self) -> str:
+        """Return the key of the active Printess script, or 'None'."""
+        printess_keys = {"PrintessLayerByLayer", "PrintessOneAtATime"}
+        for script in self._script_list:
+            key = script.getSettingData().get("key", "")
+            if key in printess_keys:
+                return key
+        return "None"
+
+    @pyqtSlot(str)
+    def setPrintessActiveScript(self, key: str) -> None:
+        """Activate a single Printess script, replacing any previously active one."""
+        printess_keys = {"PrintessLayerByLayer", "PrintessOneAtATime"}
+        self._script_list = [s for s in self._script_list
+                             if s.getSettingData().get("key", "") not in printess_keys]
+        if key in self._loaded_scripts:
+            new_script = self._loaded_scripts[key]()
+            new_script.initialize()
+            self._script_list.append(new_script)
+        self.setSelectedScriptIndex(len(self._script_list) - 1)
+        self.scriptListChanged.emit()
+        self.selectedIndexChanged.emit()
+        self.writeScriptsToStack()
+        self._propertyChanged()
+
     @pyqtSlot(str)
     def addScriptToList(self, key: str) -> None:
         Logger.log("d", "Adding script %s to list.", key)
@@ -364,8 +391,14 @@ class PostProcessingPlugin(QObject, Extension):
             return
         Logger.log("d", "Post processing view created.")
 
-        # Create the save button component
-        CuraApplication.getInstance().addAdditionalComponent("saveButton", self._view.findChild(QObject, "postProcessingSaveAreaButton"))
+        # Load the Printess script selector as a standalone component and place it
+        # next to the Slice button. Stored on self to prevent garbage collection.
+        selector_path = os.path.join(cast(str, PluginRegistry.getInstance().getPluginPath("PostProcessingPlugin")), "PrintessScriptSelector.qml")
+        self._selector_view = CuraApplication.getInstance().createQmlComponent(selector_path, {"manager": self})
+        if self._selector_view is not None:
+            CuraApplication.getInstance().addAdditionalComponent("saveButton", self._selector_view)
+        else:
+            Logger.log("e", "Failed to create Printess script selector.")
 
     def showPopup(self) -> None:
         """Show the (GUI) popup of the post processing plugin."""

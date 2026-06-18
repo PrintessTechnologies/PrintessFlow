@@ -1,10 +1,13 @@
 # Copyright (c) 2020 Ultimaker B.V.
 # Cura is released under the terms of the LGPLv3 or higher.
 
+import json
+import os
 from typing import Any, cast, Dict, Optional, TYPE_CHECKING
 from PyQt6.QtCore import pyqtSlot, QObject, Qt, QTimer
 
 from UM.Logger import Logger
+from UM.Resources import Resources
 from UM.Qt.ListModel import ListModel
 from UM.Settings.InstanceContainer import InstanceContainer  # To create new profiles.
 
@@ -162,25 +165,55 @@ class QualityManagementModel(ListModel):
         intent_category = quality_model_item["intent_category"]
         quality_group = quality_model_item["quality_group"]
         quality_changes_group = quality_model_item["quality_changes_group"]
+
+        # Python objects (quality_changes_group, quality_group) don't survive the
+        # QML→Python QVariantMap round-trip and arrive as None.  Recover by name.
         if quality_changes_group is None:
-            new_quality_changes = self._createQualityChanges(quality_group.quality_type, intent_category, new_name,
-                                                             global_stack, extruder_stack = None)
+            source_name = quality_model_item.get("name", "")
+            if source_name:
+                for group in ContainerTree.getInstance().getCurrentQualityChangesGroups():
+                    if group.name == source_name:
+                        quality_changes_group = group
+                        break
+
+        if quality_changes_group is None:
+            # Last resort: create blank containers from quality_type string (survives round-trip)
+            quality_type = quality_model_item.get("quality_type", "")
+            if not quality_type and quality_group is not None:
+                quality_type = quality_group.quality_type
+            if not quality_type:
+                Logger.log("w", "printess: duplicateQualityChanges: no quality_type for '%s'",
+                           quality_model_item.get("name", "?"))
+                return
+            new_quality_changes = self._createQualityChanges(quality_type, intent_category, new_name,
+                                                             global_stack, extruder_stack=None)
             container_registry.addContainer(new_quality_changes)
-
             for extruder in global_stack.extruderList:
-                new_extruder_quality_changes = self._createQualityChanges(quality_group.quality_type, intent_category,
-                                                                          new_name,
-                                                                          global_stack, extruder_stack = extruder)
-
+                new_extruder_quality_changes = self._createQualityChanges(quality_type, intent_category,
+                                                                          new_name, global_stack,
+                                                                          extruder_stack=extruder)
                 container_registry.addContainer(new_extruder_quality_changes)
         else:
             for metadata in [quality_changes_group.metadata_for_global] + list(quality_changes_group.metadata_per_extruder.values()):
-                containers = container_registry.findContainers(id = metadata["id"])
+                containers = container_registry.findContainers(id=metadata["id"])
                 if not containers:
                     continue
                 container = containers[0]
                 new_id = container_registry.uniqueName(container.getId())
                 container_registry.addContainer(container.duplicate(new_id, new_name))
+
+        Logger.log("d", "printess: duplicateQualityChanges: created '%s', scheduling activation", new_name)
+        final_name = new_name
+        QTimer.singleShot(300, lambda f=final_name: self._activateNewProfile(f))
+
+    def _activateNewProfile(self, name: str) -> None:
+        machine_manager = cura.CuraApplication.CuraApplication.getInstance().getMachineManager()
+        for group in ContainerTree.getInstance().getCurrentQualityChangesGroups():
+            if group.name == name:
+                machine_manager.setQualityChangesGroup(group)
+                Logger.log("d", "printess: activated '%s'", name)
+                return
+        Logger.log("w", "printess: _activateNewProfile: '%s' not found after 300 ms", name)
 
     @pyqtSlot(str)
     @pyqtSlot(str, bool)
@@ -305,10 +338,71 @@ class QualityManagementModel(ListModel):
 
         # A custom quality
         if not is_read_only:
-            display_name = "{custom_profile_name} - {the_rest}".format(custom_profile_name = quality_model_item["name"],
-                                                                       the_rest = display_name)
+            display_name = quality_model_item["name"]
 
         return display_name
+
+    def _colorsPath(self) -> str:
+        return os.path.join(Resources.getDataStoragePath(), "printess_colors.json")
+
+    @pyqtSlot(str, str)
+    def saveCustomColor(self, name: str, color: str) -> None:
+        try:
+            path = self._colorsPath()
+            colors: Dict[str, str] = {}
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    colors = json.load(f)
+            colors[name] = color
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(colors, f)
+        except Exception as e:
+            Logger.log("w", "printess: saveCustomColor failed: %s", e)
+
+    @pyqtSlot(str, result=str)
+    def getCustomColor(self, name: str) -> str:
+        try:
+            path = self._colorsPath()
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    colors = json.load(f)
+                return colors.get(name, "")
+        except Exception as e:
+            Logger.log("w", "printess: getCustomColor failed: %s", e)
+        return ""
+
+    @pyqtSlot(str, str)
+    def duplicateQualityChangesByName(self, new_name: str, source_name: str) -> None:
+        container_tree = ContainerTree.getInstance()
+        quality_changes_group_list = container_tree.getCurrentQualityChangesGroups()
+        source_group = None
+        for group in quality_changes_group_list:
+            if group.name == source_name:
+                source_group = group
+                break
+        if source_group is None and quality_changes_group_list:
+            source_group = quality_changes_group_list[0]
+        if source_group is None:
+            Logger.log("w", "printess: duplicateQualityChangesByName: no source group for '%s'", source_name)
+            return
+        container_registry = cura.CuraApplication.CuraApplication.getInstance().getContainerRegistry()
+        new_name = container_registry.uniqueName(new_name)
+        for metadata in [source_group.metadata_for_global] + list(source_group.metadata_per_extruder.values()):
+            containers = container_registry.findContainers(id=metadata["id"])
+            if not containers:
+                continue
+            container = containers[0]
+            new_id = container_registry.uniqueName(container.getId())
+            container_registry.addContainer(container.duplicate(new_id, new_name))
+
+    @pyqtSlot(str)
+    def activateQualityChangesByName(self, name: str) -> None:
+        machine_manager = cura.CuraApplication.CuraApplication.getInstance().getMachineManager()
+        for quality_changes in ContainerTree.getInstance().getCurrentQualityChangesGroups():
+            if quality_changes.name == name:
+                machine_manager.setQualityChangesGroup(quality_changes)
+                return
+        Logger.log("w", "printess: activateQualityChangesByName: '%s' not found", name)
 
     def _update(self):
         Logger.log("d", "Updating {model_class_name}.".format(model_class_name = self.__class__.__name__))
@@ -330,59 +424,6 @@ class QualityManagementModel(ListModel):
             return
 
         item_list = []
-        # Create quality group items (intent category = "default")
-        for quality_group in quality_group_dict.values():
-            if not quality_group.is_available:
-                continue
-
-            layer_height = fetchLayerHeight(quality_group)
-
-            item = {"name": quality_group.name,
-                    "is_read_only": True,
-                    "quality_group": quality_group,
-                    "quality_type": quality_group.quality_type,
-                    "quality_changes_group": None,
-                    "intent_category": "default",
-                    "section_name": IntentTranslations.getInstance().getLabel("default"),
-                    "layer_height": layer_height,  # layer_height is only used for sorting
-                    }
-            item_list.append(item)
-
-        # Sort by layer_height for built-in qualities
-        item_list = sorted(item_list, key = lambda x: x["layer_height"])
-
-        # Create intent items (non-default)
-        available_intent_list = IntentManager.getInstance().getCurrentAvailableIntents()
-        available_intent_list = [i for i in available_intent_list if i[0] != "default"]
-        result = []
-        for intent_category, quality_type in available_intent_list:
-            if not quality_group_dict[quality_type].is_available:
-                continue
-
-            try:
-                intent_label = IntentTranslations.getInstance().getLabel(intent_category)
-            except KeyError:
-                intent_label = catalog.i18nc("@label", intent_category.title())
-
-            result.append({
-                "name": quality_group_dict[quality_type].name,  # Use the quality name as the display name
-                "is_read_only": True,
-                "quality_group": quality_group_dict[quality_type],
-                "quality_type": quality_type,
-                "quality_changes_group": None,
-                "intent_category": intent_category,
-                "section_name": intent_label,
-            })
-
-        # Sort by quality_type for each intent category
-        def getIntentWeight(intent_category):
-            try:
-                return IntentTranslations.getInstance().index(intent_category)
-            except ValueError:
-                return 99
-
-        result = sorted(result, key = lambda x: (getIntentWeight(x["intent_category"]), x["quality_type"]))
-        item_list += result
 
         # Create quality_changes group items
         quality_changes_item_list = []
@@ -391,15 +432,13 @@ class QualityManagementModel(ListModel):
             quality_group = quality_group_dict.get(quality_changes_group.quality_type)
             quality_type = quality_changes_group.quality_type
 
-            if not quality_changes_group.is_available:
-                continue
             item = {"name": quality_changes_group.name,
                     "is_read_only": False,
                     "quality_group": quality_group,
                     "quality_type": quality_type,
                     "quality_changes_group": quality_changes_group,
                     "intent_category": quality_changes_group.intent_category,
-                    "section_name": catalog.i18nc("@label", "Custom profiles"),
+                    "section_name": catalog.i18nc("@label", "Syringe Profile Options"),
                     }
             quality_changes_item_list.append(item)
 

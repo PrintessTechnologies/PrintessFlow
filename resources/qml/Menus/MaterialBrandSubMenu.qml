@@ -101,7 +101,10 @@ Popup
     ScrollView
     {
         id: scrollView
-        anchors.fill: parent
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
         contentHeight: scrollViewContent.height
         clip: true
 
@@ -121,4 +124,5 @@ Popup
             color: UM.Theme.getColor("main_background")
         }
     }
+
 }

@@ -139,6 +139,12 @@
             "weight": 400,
             "family": "Noto Sans"
         },
+        "small_italic": {
+            "size": 0.9,
+            "weight": 400,
+            "italic": true,
+            "family": "Noto Sans"
+        },
         "small_bold": {
             "size": 0.9,
             "weight": 700,
@@ -204,21 +210,21 @@
     "base_colors": {
         "background_1": [255, 255, 255, 255],
         "background_2": [243, 243, 243, 255],
-        "background_3": [232, 240, 253, 255],
-        "background_4": [3, 12, 66, 255],
+        "background_3": [232, 242, 249, 255],
+        "background_4": [199, 91, 91, 255],
 
-        "accent_1": [25, 110, 240, 255],
-        "accent_2": [16, 70, 156, 255],
+        "accent_1": [151, 189, 217, 255],
+        "accent_2": [151, 189, 217, 255],
         "border_main": [212, 212, 212, 255],
-        "border_accent_1": [25, 110, 240, 255],
-        "border_accent_2": [16, 70, 156, 255],
+        "border_accent_1": [151, 189, 217, 255],
+        "border_accent_2": [151, 189, 217, 255],
         "border_field": [180, 180, 180, 255],
 
         "text_default": [0, 14, 26, 255],
         "text_disabled": [180, 180, 180, 255],
         "text_primary_button": [255, 255, 255, 255],
-        "text_secondary_button": [25, 110, 240, 255],
-        "text_link_hover": [16, 70, 156, 255],
+        "text_secondary_button": [151, 189, 217, 255],
+        "text_link_hover": [151, 189, 217, 255],
         "text_lighter": [108, 108, 108, 255],
 
         "um_green_1": [233, 245, 237, 255],
@@ -245,40 +251,40 @@
         "viewport_overlay": [246, 246, 246, 255],
 
         "primary": "accent_1",
-        "primary_hover": [48, 182, 231, 255],
+        "primary_hover": [151, 189, 217, 255],
         "primary_text": [255, 255, 255, 255],
-        "text_selection": [156, 195, 255, 127],
+        "text_selection": [151, 189, 217, 127],
         "border": [127, 127, 127, 255],
         "border_field": [180, 180, 180, 255],
         "secondary": [240, 240, 240, 255],
 
         "expandable_active": [240, 240, 240, 255],
-        "expandable_hover": [232, 242, 252, 255],
+        "expandable_hover": [232, 242, 249, 255],
 
-        "icon": [8, 7, 63, 255],
+        "icon": [199, 91, 91, 255],
 
         "primary_button": "accent_1",
-        "primary_button_hover": [16, 70, 156, 255],
+        "primary_button_hover": [108, 152, 185, 255],
         "primary_button_text": [255, 255, 255, 255],
 
         "secondary_button": "background_1",
         "secondary_button_shadow": [216, 216, 216, 255],
-        "secondary_button_hover": [232, 240, 253, 255],
+        "secondary_button_hover": [232, 242, 249, 255],
         "secondary_button_text": "accent_1",
 
-        "main_window_header_background": [8, 7, 63, 255],
-        "main_window_header_background_gradient": [25, 23, 91, 255],
-        "main_window_header_button_text_active": [8, 7, 63, 255],
+        "main_window_header_background": [199, 91, 91, 255],
+        "main_window_header_background_gradient": [199, 91, 91, 255],
+        "main_window_header_button_text_active": [199, 91, 91, 255],
         "main_window_header_button_text_inactive": [255, 255, 255, 255],
         "main_window_header_button_text_hovered": [255, 255, 255, 255],
         "main_window_header_button_background_active": [255, 255, 255, 255],
         "main_window_header_button_background_inactive": [255, 255, 255, 0],
-        "main_window_header_button_background_hovered": [117, 114, 159, 255],
+        "main_window_header_button_background_hovered": [199, 91, 91, 255],
 
-        "account_widget_outline_active": [70, 66, 126, 255],
+        "account_widget_outline_active": [199, 91, 91, 255],
         "account_sync_state_icon": [25, 25, 25, 255],
 
-        "machine_selector_printer_icon": [8, 7, 63, 255],
+        "machine_selector_printer_icon": [199, 91, 91, 255],
 
         "action_panel_secondary": "accent_1",
 
@@ -288,7 +294,7 @@
 
         "notification_icon": [255, 0, 0, 255],
 
-        "printer_type_label_background": [228, 228, 242, 255],
+        "printer_type_label_background": [247, 232, 232, 255],
 
         "window_disabled_background": [0, 0, 0, 255],
 
@@ -306,29 +312,29 @@
         "success": [36, 162, 73, 255],
         "disabled": [229, 229, 229, 255],
 
-        "toolbar_button_hover": [232, 242, 252, 255],
-        "toolbar_button_active": [232, 242, 252, 255],
-        "toolbar_button_active_hover": [232, 242, 252, 255],
+        "toolbar_button_hover": [232, 242, 249, 255],
+        "toolbar_button_active": [232, 242, 249, 255],
+        "toolbar_button_active_hover": [232, 242, 249, 255],
 
         "button_text": [255, 255, 255, 255],
 
         "small_button_text": [102, 102, 102, 255],
-        "small_button_text_hover": [8, 7, 63, 255],
+        "small_button_text_hover": [199, 91, 91, 255],
 
         "button_tooltip": [31, 36, 39, 255],
 
         "extruder_disabled": [255, 255, 255, 102],
 
         "action_button": [255, 255, 255, 255],
-        "action_button_hovered": [232, 242, 252, 255],
+        "action_button_hovered": [232, 242, 249, 255],
         "action_button_disabled": [245, 245, 245, 255],
         "action_button_disabled_text": [196, 196, 196, 255],
         "action_button_shadow": [223, 223, 223, 255],
 
         "scrollbar_background": [255, 255, 255, 255],
-        "scrollbar_handle": [10, 8, 80, 255],
-        "scrollbar_handle_hover": [50, 130, 255, 255],
-        "scrollbar_handle_down": [50, 130, 255, 255],
+        "scrollbar_handle": [199, 91, 91, 255],
+        "scrollbar_handle_hover": [199, 91, 91, 255],
+        "scrollbar_handle_down": [199, 91, 91, 255],
 
         "setting_category": "background_1",
         "setting_category_disabled": [255, 255, 255, 255],
@@ -340,10 +346,10 @@
         "setting_control": "background_2",
         "setting_control_highlight": "background_3",
         "setting_control_border": [199, 199, 199, 255],
-        "setting_control_border_highlight": [50, 130, 255, 255],
+        "setting_control_border_highlight": [151, 189, 217, 255],
         "setting_control_text": [35, 35, 35, 255],
         "setting_control_button": [102, 102, 102, 255],
-        "setting_control_button_hover": [8, 7, 63, 255],
+        "setting_control_button_hover": [199, 91, 91, 255],
         "setting_control_disabled": "background_2",
         "setting_control_disabled_text": [127, 127, 127, 255],
         "setting_control_disabled_border": [127, 127, 127, 255],
@@ -358,12 +364,12 @@
         "core_compatibility_warning": [243, 166, 59, 255],
 
         "progressbar_background": [245, 245, 245, 255],
-        "progressbar_control": [50, 130, 255, 255],
+        "progressbar_control": [199, 91, 91, 255],
 
         "slider_groove": [223, 223, 223, 255],
-        "slider_groove_fill": [8, 7, 63, 255],
-        "slider_handle": [8, 7, 63, 255],
-        "slider_handle_active": [50, 130, 255, 255],
+        "slider_groove_fill": [199, 91, 91, 255],
+        "slider_handle": [199, 91, 91, 255],
+        "slider_handle_active": [199, 91, 91, 255],
         "slider_text_background": [255, 255, 255, 255],
 
         "quality_slider_unavailable": [179, 179, 179, 255],
@@ -413,9 +419,9 @@
         "message_background": [255, 255, 255, 255],
         "message_border": [192, 193, 194, 255],
         "message_close": [102, 102, 102, 255],
-        "message_close_hover": [8, 7, 63, 255],
+        "message_close_hover": [199, 91, 91, 255],
         "message_progressbar_background": [245, 245, 245, 255],
-        "message_progressbar_control": [50, 130, 255, 255],
+        "message_progressbar_control": [199, 91, 91, 255],
         "message_success_icon": [255, 255, 255, 255],
         "message_warning_icon": [0, 0, 0, 255],
         "message_error_icon": [255, 255, 255, 255],
@@ -424,7 +430,7 @@
 
         "status_offline": [0, 0, 0, 255],
         "status_ready": [0, 205, 0, 255],
-        "status_busy": [50, 130, 255, 255],
+        "status_busy": [151, 189, 217, 255],
         "status_paused": [255, 140, 0, 255],
         "status_stopped": [236, 82, 80, 255],
 
@@ -435,7 +441,7 @@
         "all_axis": [255, 255, 255, 255],
 
         "viewport_background": [250, 250, 250, 255],
-        "volume_outline": [50, 130, 255, 255],
+        "volume_outline": [151, 189, 217, 255],
         "buildplate": [244, 244, 244, 255],
         "buildplate_grid": [180, 180, 180, 255],
         "buildplate_grid_minor": [228, 228, 228, 255],
@@ -447,7 +453,7 @@
         "model_overhang": [255, 0, 0, 255],
         "model_unslicable": [122, 122, 122, 255],
         "model_unslicable_alt": [172, 172, 127, 255],
-        "model_selection_outline": [50, 130, 255, 255],
+        "model_selection_outline": [199, 91, 91, 255],
         "model_non_printing": [122, 122, 122, 255],
 
         "xray": [26,  26,  62, 255],
@@ -473,13 +479,13 @@
 
         "monitor_printer_family_tag": [228, 228, 242, 255],
         "monitor_text_disabled": [238, 238, 238, 255],
-        "monitor_icon_primary": [10, 8, 80, 255],
+        "monitor_icon_primary": [199, 91, 91, 255],
         "monitor_icon_accent": [255, 255, 255, 255],
         "monitor_icon_disabled": [238, 238, 238, 255],
 
         "monitor_card_border": [192, 193, 194, 255],
         "monitor_card_background": [255, 255, 255, 255],
-        "monitor_card_hover": [232, 242, 252, 255],
+        "monitor_card_hover": [232, 242, 249, 255],
 
         "monitor_stage_background": [246, 246, 246, 255],
         "monitor_stage_background_fade": [246, 246, 246, 102],

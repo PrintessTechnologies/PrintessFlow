@@ -22,6 +22,7 @@ Column
     Cura.CategoryButton
     {
         id: categoryButton
+        visible: materialName !== "" && materialName !== "N/A"
         width: parent.width
         height: UM.Theme.getSize("preferences_page_list_item").height
         labelText: materialName
@@ -45,7 +46,7 @@ Column
 
     Column
     {
-        visible: material_type_section.expanded
+        visible: materialName === "" || materialName === "N/A" || material_type_section.expanded
         width: parent.width
 
         Repeater

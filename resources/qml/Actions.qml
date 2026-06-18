@@ -91,7 +91,7 @@ Item
     {
         id: openSponsershipPageAction
         onTriggered: Qt.openUrlExternally("https://ultimaker.com/software/ultimaker-cura/sponsor/")
-        text: catalog.i18nc("@action:inmenu", "Sponsor Cura")
+        text: catalog.i18nc("@action:inmenu", "Sponsor PrintessFlow")
     }
 
     Action
@@ -197,7 +197,7 @@ Item
         //For more information, see:
         //- https://doc.qt.io/qt-5/macos-issues.html#menu-bar
         //- https://doc.qt.io/qt-5/qmenubar.html#qmenubar-as-a-global-menu-bar
-        text: (Qt.platform.os == "osx") ? "Configure Cura..." : catalog.i18nc("@action:inmenu", "Configure Cura...")
+        text: (Qt.platform.os == "osx") ? "Configure PrintessFlow..." : catalog.i18nc("@action:inmenu", "Configure PrintessFlow...")
         icon.name: "configure"
         // on MacOS it us customary to assign the ctrl+, hotkey to open a general settings menu
         shortcut: (Qt.platform.os == "osx") ? "Ctrl+," : ""
@@ -219,7 +219,7 @@ Item
     Action
     {
         id: manageMaterialsAction
-        text: catalog.i18nc("@action:inmenu", "Manage Materials...")
+        text: catalog.i18nc("@action:inmenu", "Manage Syringes...")
         icon.name: "configure"
         shortcut: "Ctrl+K"
     }
@@ -540,7 +540,7 @@ Item
     Action
     {
         id: openCuraLogFileAction
-        text: catalog.i18nc("@action:inmenu menubar:help","Open Cura Log File")
+        text: catalog.i18nc("@action:inmenu menubar:help","Open PrintessFlow Log File")
     }
 
 

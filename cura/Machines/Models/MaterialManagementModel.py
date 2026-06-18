@@ -34,6 +34,10 @@ class MaterialManagementModel(QObject):
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent = parent)
         self._material_sync = CloudMaterialSync(parent=self)
+        # Register the preference so QML can set it before calling createMaterial()
+        application = cura.CuraApplication.CuraApplication.getInstance()
+        if application is not None:
+            application.getPreferences().addPreference("cura/pending_material_brand", "")
 
     @pyqtSlot("QVariant", result = bool)
     def canMaterialBeRemoved(self, material_node: "MaterialNode") -> bool:
@@ -217,6 +221,20 @@ class MaterialManagementModel(QObject):
         application = cura.CuraApplication.CuraApplication.getInstance()
         application.saveSettings()
 
+        # Read the brand choice set from QML before this call. Defaults to "Custom".
+        prefs = application.getPreferences()
+        prefs.addPreference("cura/pending_material_brand", "")
+        pending_brand = prefs.getValue("cura/pending_material_brand") or ""
+        prefs.setValue("cura/pending_material_brand", "")  # Reset immediately after reading
+        Logger.info("createMaterial: pending_brand='%s'", pending_brand)
+
+        if pending_brand == "Printess":
+            brand = "Printess"
+            mat_name = "New Printess Material"
+        else:
+            brand = catalog.i18nc("@label", "Custom")
+            mat_name = catalog.i18nc("@label", "Custom Material")
+
         # Find the preferred material.
         extruder_stack = application.getMachineManager().activeStack
         active_variant_name = extruder_stack.variant.getName()
@@ -229,13 +247,85 @@ class MaterialManagementModel(QObject):
 
         # Create a new ID & new metadata for the new material.
         new_id = CuraContainerRegistry.getInstance().uniqueName("custom_material")
-        new_metadata = {"name": catalog.i18nc("@label", "Custom Material"),
-                        "brand": catalog.i18nc("@label", "Custom"),
+        new_metadata = {"name": mat_name,
+                        "brand": brand,
                         "GUID": str(uuid.uuid4()),
+                        "description": "",
                         }
 
         self.duplicateMaterial(preferred_material_node, new_base_id = new_id, new_metadata = new_metadata)
         return new_id
+
+
+    @pyqtSlot(result = str)
+    def createPrintessMaterial(self) -> str:
+        """Create a new material under the Printess brand (called from QML)."""
+        Logger.log("d", "createPrintessMaterial: slot called from QML")
+        return self._createMaterialWithBrand("Printess")
+
+    @pyqtSlot(result = str)
+    def createCustomMaterial(self) -> str:
+        """Create a new material under the Custom brand (called from QML)."""
+        Logger.log("d", "createCustomMaterial: slot called from QML")
+        return self._createMaterialWithBrand("Custom")
+
+    @pyqtSlot(str, result = str)
+    def createMaterialWithBrand(self, brand: str) -> str:
+        """Create a new material with the specified brand.
+
+        :param brand: The brand name for the new material (e.g. "Printess" or "Custom").
+        :return: The ID of the newly created material.
+        """
+        Logger.log("d", "createMaterialWithBrand: slot called from QML with brand=%s", brand)
+        return self._createMaterialWithBrand(brand)
+
+    def _createMaterialWithBrand(self, brand: str) -> str:
+        """Internal implementation for creating a material with a given brand."""
+        Logger.log("d", "_createMaterialWithBrand: brand=%s", brand)
+        try:
+            application = cura.CuraApplication.CuraApplication.getInstance()
+            application.saveSettings()
+
+            # Find the preferred material.
+            extruder_stack = application.getMachineManager().activeStack
+            if extruder_stack is None:
+                Logger.log("e", "_createMaterialWithBrand: no active extruder stack")
+                return ""
+            active_variant_name = extruder_stack.variant.getName()
+            approximate_diameter = int(extruder_stack.approximateMaterialDiameter)
+            Logger.log("d", "_createMaterialWithBrand: variant=%s diameter=%s", active_variant_name, approximate_diameter)
+
+            global_container_stack = application.getGlobalContainerStack()
+            if not global_container_stack:
+                Logger.log("e", "_createMaterialWithBrand: no global container stack")
+                return ""
+
+            machine_node = ContainerTree.getInstance().machines[global_container_stack.definition.getId()]
+            if active_variant_name not in machine_node.variants:
+                Logger.log("e", "_createMaterialWithBrand: variant '%s' not in machine_node.variants %s", active_variant_name, list(machine_node.variants.keys()))
+                # Fall back to the first available variant
+                active_variant_name = next(iter(machine_node.variants))
+                Logger.log("d", "_createMaterialWithBrand: falling back to variant '%s'", active_variant_name)
+
+            preferred_material_node = machine_node.variants[active_variant_name].preferredMaterial(approximate_diameter)
+            Logger.log("d", "_createMaterialWithBrand: preferred_material_node=%s", preferred_material_node)
+
+            new_id = CuraContainerRegistry.getInstance().uniqueName("custom_material")
+            name = "New Printess Material" if brand == "Printess" else "Custom Material"
+            new_metadata = {"name": name,
+                            "brand": brand,
+                            "GUID": str(uuid.uuid4()),
+                            "description": "",
+                            }
+            Logger.log("d", "_createMaterialWithBrand: duplicating material with new_id=%s", new_id)
+            self.duplicateMaterial(preferred_material_node, new_base_id = new_id, new_metadata = new_metadata)
+            Logger.log("d", "_createMaterialWithBrand: done, returning new_id=%s", new_id)
+            return new_id
+        except Exception as e:
+            Logger.log("e", "_createMaterialWithBrand: exception: %s", str(e))
+            import traceback
+            Logger.log("e", "_createMaterialWithBrand: traceback: %s", traceback.format_exc())
+            return ""
 
     @pyqtSlot(str)
     def addFavorite(self, material_base_file: str) -> None:

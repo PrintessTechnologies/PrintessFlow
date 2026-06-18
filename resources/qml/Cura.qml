@@ -26,13 +26,8 @@ UM.MainWindow
     // Cura application window title
     title:
     {
-        let result = "";
-        if(PrintInformation !== null && PrintInformation.jobName != "")
-        {
-            result += PrintInformation.jobName + " - ";
-        }
-        result += CuraApplication.applicationDisplayName;
-        return result;
+        let jobName = (PrintInformation !== null && PrintInformation.jobName != "") ? PrintInformation.jobName : "Untitled";
+        return jobName + " - PrintessFlow";
     }
 
     backgroundColor: UM.Theme.getColor("viewport_background")
@@ -565,8 +560,8 @@ UM.MainWindow
     Cura.MessageDialog
     {
         id: exitConfirmationDialog
-        title: catalog.i18nc("@title:window %1 is the application name", "Closing %1").arg(CuraApplication.applicationDisplayName)
-        text: catalog.i18nc("@label %1 is the application name", "Are you sure you want to exit %1?").arg(CuraApplication.applicationDisplayName)
+        title: catalog.i18nc("@title:window %1 is the application name", "Closing %1").arg("PrintessFlow")
+        text: catalog.i18nc("@label %1 is the application name", "Are you sure you want to exit %1?").arg("PrintessFlow")
         standardButtons: Dialog.Yes | Dialog.No
         onAccepted: CuraApplication.callConfirmExitDialogCallback(true)
         onRejected: CuraApplication.callConfirmExitDialogCallback(false)
@@ -575,7 +570,7 @@ UM.MainWindow
             if (!visible)
             {
                 // reset the text to default because other modules may change the message text.
-                text = catalog.i18nc("@label %1 is the application name", "Are you sure you want to exit %1?").arg(CuraApplication.applicationDisplayName);
+                text = catalog.i18nc("@label %1 is the application name", "Are you sure you want to exit %1?").arg("PrintessFlow");
             }
         }
     }

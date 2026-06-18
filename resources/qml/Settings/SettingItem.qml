@@ -13,7 +13,7 @@ import "."
 Item
 {
     id: base
-    height: enabled ? Math.max(UM.Theme.getSize("section").height, label.height) + UM.Theme.getSize("narrow_margin").height : 0
+    height: enabled ? Math.max(UM.Theme.getSize("section").height, label.height) + UM.Theme.getSize("narrow_margin").height + (definition && definition.key === "line_width" ? lineWidthHint.implicitHeight + UM.Theme.getSize("narrow_margin").height : 0) + (definition && definition.key === "material_flow" ? materialFlowHint.implicitHeight + UM.Theme.getSize("narrow_margin").height : 0) + (definition && definition.key === "printess_park_lift" ? parkLiftHint.implicitHeight + UM.Theme.getSize("narrow_margin").height : 0) : 0
     anchors.left: parent.left
     anchors.right: parent.right
 
@@ -104,7 +104,13 @@ Item
     {
         id: mouse
 
-        anchors.fill: parent
+        anchors
+        {
+            top: parent.top
+            left: parent.left
+            right: parent.right
+        }
+        height: Math.max(UM.Theme.getSize("section").height, label.height) + UM.Theme.getSize("narrow_margin").height
 
         acceptedButtons: Qt.RightButton
         hoverEnabled: true;
@@ -356,5 +362,66 @@ Item
             width: UM.Theme.getSize("setting_control").width
             height: UM.Theme.getSize("setting_control").height
         }
+    }
+
+
+    UM.Label
+    {
+        id: lineWidthHint
+        visible: definition ? definition.key === "line_width" : false
+
+        anchors
+        {
+            top: mouse.bottom
+            left: parent.left
+            leftMargin: Math.round(UM.Theme.getSize("thin_margin").width + ((definition ? definition.depth : 0) - 1) * UM.Theme.getSize("default_margin").width)
+            right: parent.right
+            rightMargin: UM.Theme.getSize("narrow_margin").width
+        }
+
+        text: "Changes to this value are automatically applied as the configured nozzle diameter."
+        font: UM.Theme.getFont("small_italic")
+        color: UM.Theme.getColor("text_medium")
+        wrapMode: Text.WordWrap
+    }
+
+    UM.Label
+    {
+        id: materialFlowHint
+        visible: definition ? definition.key === "material_flow" : false
+
+        anchors
+        {
+            top: mouse.bottom
+            left: parent.left
+            leftMargin: Math.round(UM.Theme.getSize("thin_margin").width + ((definition ? definition.depth : 0) - 1) * UM.Theme.getSize("default_margin").width)
+            right: parent.right
+            rightMargin: UM.Theme.getSize("narrow_margin").width
+        }
+
+        text: "Multiplier for the extruder's extrusion volume per mm of movement."
+        font: UM.Theme.getFont("small_italic")
+        color: UM.Theme.getColor("text_medium")
+        wrapMode: Text.WordWrap
+    }
+
+    UM.Label
+    {
+        id: parkLiftHint
+        visible: definition ? definition.key === "printess_park_lift" : false
+
+        anchors
+        {
+            top: mouse.bottom
+            left: parent.left
+            leftMargin: Math.round(UM.Theme.getSize("thin_margin").width + ((definition ? definition.depth : 0) - 1) * UM.Theme.getSize("default_margin").width)
+            right: parent.right
+            rightMargin: UM.Theme.getSize("narrow_margin").width
+        }
+
+        text: "Additional clearance added above the highest printed layer when parking an idle extruder."
+        font: UM.Theme.getFont("small_italic")
+        color: UM.Theme.getColor("text_medium")
+        wrapMode: Text.WordWrap
     }
 }

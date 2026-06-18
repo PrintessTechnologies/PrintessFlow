@@ -27,6 +27,9 @@ Cura.Menu
 
     property string activeMaterialId: (activeExtruder === null || activeExtruder === undefined) ? "" : activeExtruder.material.id
     property bool updateModels: true
+
+    signal createNewSyringeClicked()
+
     Cura.FavoriteMaterialsModel
     {
         id: favoriteMaterialsModel
@@ -34,14 +37,7 @@ Cura.Menu
         enabled: updateModels
     }
 
-    Cura.GenericMaterialsModel
-    {
-        id: genericMaterialsModel
-        extruderPosition: materialMenu.extruderIndex
-        enabled: updateModels
-    }
-
-    Cura.MaterialBrandsModel
+    Cura.AllMaterialBrandsModel
     {
         id: brandModel
         extruderPosition: materialMenu.extruderIndex
@@ -72,30 +68,6 @@ Cura.Menu
 
     Cura.MenuSeparator { visible: favoriteMaterialsModel.items.length > 0}
 
-    Cura.Menu
-    {
-        id: genericMenu
-        title: catalog.i18nc("@label:category menu label", "Generic")
-        enabled: genericMaterialsModel.items.length > 0
-
-        Instantiator
-        {
-            model: genericMaterialsModel
-            delegate: Cura.MenuItem
-            {
-                text: model.name
-                checkable: true
-                enabled: isActiveExtruderEnabled
-                checked: model.root_material_id === materialMenu.currentRootMaterialId
-                onTriggered: Cura.MachineManager.setMaterial(extruderIndex, model.container_node)
-            }
-            onObjectAdded: function(index, object) { genericMenu.insertItem(index, object)}
-            onObjectRemoved: function(index, object) {genericMenu.removeItem(index) }
-        }
-    }
-
-    Cura.MenuSeparator {}
-
     Instantiator
     {
         model: brandModel
@@ -111,13 +83,14 @@ Cura.Menu
 
     Cura.MenuItem
     {
-        action: Cura.Actions.manageMaterials
+        text: catalog.i18nc("@action:button", "Create a New Syringe")
+        enabled: isActiveExtruderEnabled
+        onTriggered: materialMenu.createNewSyringeClicked()
     }
-
-    Cura.MenuSeparator {}
 
     Cura.MenuItem
     {
-        action: Cura.Actions.marketplaceMaterials
+        action: Cura.Actions.manageMaterials
     }
+
 }

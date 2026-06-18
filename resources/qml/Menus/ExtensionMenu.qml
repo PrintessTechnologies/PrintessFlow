@@ -58,7 +58,11 @@ Cura.Menu
             }
         }
 
-        onObjectAdded: function(index, object) { extensionMenu.insertMenu(index, object) }
+        onObjectAdded: function(index, object) {
+            if (object.title !== "Firmware Update Checker" && object.title !== "Printess Backups") {
+                extensionMenu.insertMenu(index, object)
+            }
+        }
         onObjectRemoved: function(index, object) { extensionMenu.removeMenu(object)}
     }
 }

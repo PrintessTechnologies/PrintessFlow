@@ -31,7 +31,7 @@ UM.PreferencesPage
 
     function reset()
     {
-        settingVisibilityPresetsModel.setActivePreset("basic")
+        settingVisibilityPresetsModel.setActivePreset("printess_v1.0")
     }
     resetEnabled: true;
 
@@ -112,11 +112,13 @@ UM.PreferencesPage
                 verticalCenter: filter.verticalCenter
             }
 
-            model: settingVisibilityPresetsModel.items
+            property var filteredPresets: settingVisibilityPresetsModel.items.filter(function(item) { return item.presetId !== "custom" })
+
+            model: filteredPresets
             textRole: "name"
 
-            currentIndex: settingVisibilityPresetsModel.items.findIndex(i => i.presetId === settingVisibilityPresetsModel.activePreset)
-            onActivated: settingVisibilityPresetsModel.setActivePreset(settingVisibilityPresetsModel.items[index].presetId)
+            currentIndex: filteredPresets.findIndex(function(i) { return i.presetId === settingVisibilityPresetsModel.activePreset })
+            onActivated: settingVisibilityPresetsModel.setActivePreset(filteredPresets[index].presetId)
         }
 
         ListView

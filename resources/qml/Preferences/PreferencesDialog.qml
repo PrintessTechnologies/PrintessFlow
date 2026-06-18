@@ -52,11 +52,11 @@ UM.Dialog
                     item: Qt.resolvedUrl("MachinesPage.qml")
                 },
                 {
-                    name: catalog.i18nc("@title:tab", "Materials"),
+                    name: catalog.i18nc("@title:tab", "Syringes"),
                     item: Qt.resolvedUrl("Materials/MaterialsPage.qml")
                 },
                 {
-                    name: catalog.i18nc("@title:tab", "Profiles"),
+                    name: catalog.i18nc("@title:tab", "Dispense Tips"),
                     item: Qt.resolvedUrl("ProfilesPage.qml")
                 }
             ]

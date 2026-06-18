@@ -66,7 +66,6 @@
 
         "main_window_header_button_background_inactive": "background_4",
         "main_window_header_button_text_inactive": "text_primary_button",
-        "main_window_header_button_text_active": "background_4",
         "main_window_header_background": "background_4",
         "main_window_header_background_gradient": "background_4",
         "main_window_header_button_background_hovered": [46, 46, 46, 255],       

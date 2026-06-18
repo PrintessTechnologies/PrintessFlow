@@ -14,7 +14,7 @@ UM.Dialog
 
     id: base
 
-    title: catalog.i18nc("@title:window The argument is the application name.", "About %1").arg(CuraApplication.applicationDisplayName)
+    title: catalog.i18nc("@title:window The argument is the application name.", "About %1").arg("PrintessFlow")
 
     // Flag to toggle between main dependencies information and extensive dependencies information
     property bool showDefaultDependencies: true
@@ -152,14 +152,14 @@ UM.Dialog
 
             UM.Label
             {
-                text: catalog.i18nc("@label", "End-to-end solution for fused filament 3D printing.")
+                text: "PrintessFlow is developed by Printess Technologies, based on Ultimaker Cura (Copyright © UltiMaker B.V.), released under the GNU Lesser General Public License v3 or higher."
                 font: UM.Theme.getFont("system")
                 wrapMode: Text.WordWrap
             }
 
             UM.Label
             {
-                text: catalog.i18nc("@info:credit", "Cura is developed by UltiMaker in cooperation with the community.\nCura proudly uses the following open source projects:")
+                text: "PrintessFlow proudly uses the following open source projects:"
                 font: UM.Theme.getFont("system")
                 wrapMode: Text.WordWrap
             }

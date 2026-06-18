@@ -37,6 +37,11 @@ Item
         manager.updateMaterialForDiameter(extruderPosition)
     }
 
+    Component.onCompleted:
+    {
+        manager.syncMaterialDiameterToDefinitionChanges()
+    }
+
     Item
     {
         id: upperBlock
@@ -69,14 +74,26 @@ Item
                 id: extruderNozzleSizeField
                 visible: !Cura.MachineManager.activeMachine.hasVariants
                 containerStackId: base.extruderStackId
-                settingKey: "machine_nozzle_size"
-                settingStoreIndex: propertyStoreIndex
+                settingKey: "line_width"
+                settingStoreIndex: 0
                 labelText: catalog.i18nc("@label", "Nozzle size")
                 labelFont: base.labelFont
                 labelWidth: base.labelWidth
                 controlWidth: base.controlWidth
                 unitText: catalog.i18nc("@label", "mm")
                 forceUpdateOnChangeFunction: forceUpdateFunction
+                enabled: false
+            }
+
+            UM.Label
+            {
+                visible: extruderNozzleSizeField.visible
+                width: parent.width
+                text: catalog.i18nc("@description", "Always set equal to the Line Width in Print Settings.")
+                wrapMode: Text.WordWrap
+                font: UM.Theme.getFont("default")
+                color: UM.Theme.getColor("text_medium")
+                leftPadding: base.labelWidth
             }
 
             Cura.NumericTextFieldWithUnit  // "Compatible material diameter"
@@ -85,14 +102,23 @@ Item
                 containerStackId: base.extruderStackId
                 settingKey: "material_diameter"
                 settingStoreIndex: propertyStoreIndex
-                labelText: catalog.i18nc("@label", "Compatible material diameter")
+                labelText: catalog.i18nc("@label", "Compatible material diameter (auto)")
                 labelFont: base.labelFont
                 labelWidth: base.labelWidth
                 controlWidth: base.controlWidth
                 unitText: catalog.i18nc("@label", "mm")
                 forceUpdateOnChangeFunction: forceUpdateFunction
-                // Other modules won't automatically respond after the user changes the value, so we need to force it.
-                afterOnEditingFinishedFunction: updateMaterialDiameter
+                enabled: false
+            }
+
+            UM.Label
+            {
+                width: parent.width
+                text: catalog.i18nc("@description", "Automatically matched to the diameter of the selected material.")
+                wrapMode: Text.WordWrap
+                font: UM.Theme.getFont("default")
+                color: UM.Theme.getColor("text_medium")
+                leftPadding: base.labelWidth
             }
 
             Cura.NumericTextFieldWithUnit  // "Nozzle offset X"

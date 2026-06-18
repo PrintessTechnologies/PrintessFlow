@@ -16,6 +16,7 @@ Button
     // another shortcut to be added (which will cause for "QQuickAction::event: Ambiguous shortcut overload: " to
     // happen.
     property string labelText: ""
+    property string tipColor: "transparent"
     id: button
     hoverEnabled: true
     leftPadding: UM.Theme.getSize("default_margin").width
@@ -43,7 +44,7 @@ Button
     contentItem: Item
     {
         height: button.height
-        width: button.width
+        width: button.availableWidth
         UM.ColorImage
         {
             id: check
@@ -59,10 +60,26 @@ Button
             id: textLabel
             text: button.text != "" ? replaceText(button.text) : replaceText(button.labelText)
             height: contentHeight
-            color: button.enabled ? UM.Theme.getColor("text") :UM.Theme.getColor("text_inactive")
+            color: button.enabled ? UM.Theme.getColor("text") : UM.Theme.getColor("text_inactive")
             anchors.left: check.right
             anchors.leftMargin: UM.Theme.getSize("narrow_margin").width
+            anchors.right: tipOval.left
+            anchors.rightMargin: UM.Theme.getSize("narrow_margin").width
             anchors.verticalCenter: parent.verticalCenter
+            elide: Text.ElideRight
+        }
+        Rectangle
+        {
+            id: tipOval
+            width: button.tipColor !== "transparent" ? Math.round(height * 1.6) : 0
+            height: Math.round(textLabel.contentHeight * 0.85)
+            radius: height / 2
+            color: button.tipColor
+            border.width: button.tipColor === "#FFFFFF" ? 1 : 0
+            border.color: "#888888"
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.right: parent.right
+            anchors.rightMargin: button.tipColor !== "transparent" ? UM.Theme.getSize("default_margin").width : 0
         }
     }
 }

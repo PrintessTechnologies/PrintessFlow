@@ -68,18 +68,6 @@ class CuraSplashScreen(QSplashScreen):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
 
-        version = Application.getInstance().getVersion().split("-")
-
-        # Draw version text
-        font = QFont()
-        font.setPixelSize(24)
-        painter.setFont(font)
-
-        if len(version) == 1:
-            painter.drawText(40, 104 + self._version_y_offset, round(330 * self._scale), round(230 * self._scale), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, version[0] if not ApplicationMetadata.IsAlternateVersion else ApplicationMetadata.CuraBuildType)
-        elif len(version) > 1:
-            painter.drawText(40, 104 + self._version_y_offset, round(330 * self._scale), round(230 * self._scale), Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, f"{version[0]}-{version[1]}" if not ApplicationMetadata.IsAlternateVersion else ApplicationMetadata.CuraBuildType)
-
         # Draw the loading image
         pen = QPen()
         pen.setWidthF(2 * self._scale)
@@ -100,7 +88,6 @@ class CuraSplashScreen(QSplashScreen):
                              self._current_message)
 
         painter.restore()
-        super().drawContents(painter)
 
     def showMessage(self, message, *args, **kwargs):
         if self._to_stop:

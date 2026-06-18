@@ -114,34 +114,6 @@ Item
                 width: informationPage.width
                 spacing: UM.Theme.getSize("narrow_margin").height
 
-                Cura.MessageDialog
-                {
-                    id: confirmDiameterChangeDialog
-
-                    title: catalog.i18nc("@title:window", "Confirm Diameter Change")
-                    text: catalog.i18nc("@label (%1 is a number)", "The new filament diameter is set to %1 mm, which is not compatible with the current extruder. Do you wish to continue?".arg(new_diameter_value))
-                    standardButtons: Dialog.Yes | Dialog.No
-
-                    property var new_diameter_value: null
-                    property var old_diameter_value: null
-                    property var old_approximate_diameter_value: null
-
-                    onAccepted:
-                    {
-                        base.setMetaDataEntry("approximate_diameter", old_approximate_diameter_value, getApproximateDiameter(new_diameter_value).toString());
-                        base.setMetaDataEntry("properties/diameter", properties.diameter, new_diameter_value);
-                        // CURA-6868 Make sure to update the extruder to user a diameter-compatible material.
-                        Cura.MachineManager.updateMaterialWithVariant()
-                        base.resetSelectedMaterial()
-                    }
-
-                    onRejected:
-                    {
-                        base.properties.diameter = old_diameter_value;
-                        diameterTextField.valueText = Qt.binding(function() { return base.properties.diameter })
-                    }
-                }
-
                 Row
                 {
                     spacing: UM.Theme.getSize("narrow_margin").width
@@ -187,7 +159,7 @@ Item
                     {
                         height: informationPage.rowHeight
                         width: informationPage.columnWidth
-                        text: catalog.i18nc("@label", "Material Type")
+                        text: catalog.i18nc("@label", "Syringe Type")
                     }
                     Cura.TextField
                     {
@@ -283,39 +255,6 @@ Item
                     {
                         height: informationPage.rowHeight
                         width: informationPage.columnWidth
-                        text: catalog.i18nc("@label", "Density")
-                    }
-
-                    Cura.NumericTextFieldWithUnit
-                    {
-                        id: densityTextField
-                        enabled: base.editingEnabled
-                        valueText: properties.density
-                        controlWidth: informationPage.columnWidth
-                        controlHeight: informationPage.rowHeight
-                        spacing: 0
-                        unitText: "g/cm³"
-                        decimals: 2
-                        maximum: 1000
-
-                        editingFinishedFunction: function()
-                        {
-                            var modified_text = valueText.replace(",", ".");
-                            base.setMetaDataEntry("properties/density", properties.density, modified_text)
-                        }
-
-                        onValueTextChanged: updateCostPerMeter()
-                    }
-                }
-
-                Row
-                {
-                    height: parent.rowHeight
-                    spacing: UM.Theme.getSize("narrow_margin").width
-                    UM.Label
-                    {
-                        height: informationPage.rowHeight
-                        width: informationPage.columnWidth
                         text: catalog.i18nc("@label", "Diameter")
                     }
 
@@ -333,128 +272,14 @@ Item
 
                         editingFinishedFunction: function()
                         {
-                            // This does not use a SettingPropertyProvider, because we need to make the change to all containers
-                            // which derive from the same base_file
-                            var old_diameter = Cura.ContainerManager.getContainerMetaDataEntry(base.containerId, "properties/diameter");
-                            var old_approximate_diameter = Cura.ContainerManager.getContainerMetaDataEntry(base.containerId, "approximate_diameter");
+                            // Do NOT update approximate_diameter — keeping it at its original value
+                            // prevents the frozen BaseMaterialsModel diameter filter from hiding
+                            // this material when the user changes the actual barrel diameter.
                             var modified_value = valueText.replace(",", ".");
-                            var new_approximate_diameter = getApproximateDiameter(modified_value);
-
-                            if (new_approximate_diameter != Cura.ExtruderManager.getActiveExtruderStack().approximateMaterialDiameter)
-                            {
-                                confirmDiameterChangeDialog.old_diameter_value = old_diameter;
-                                confirmDiameterChangeDialog.new_diameter_value = modified_value;
-                                confirmDiameterChangeDialog.old_approximate_diameter_value = old_approximate_diameter;
-
-                                confirmDiameterChangeDialog.open()
-                            }
-                            else {
-                                base.setMetaDataEntry("approximate_diameter", old_approximate_diameter, new_approximate_diameter);
-                                base.setMetaDataEntry("properties/diameter", properties.diameter, modified_value);
-                            }
+                            base.setMetaDataEntry("properties/diameter", properties.diameter, modified_value);
                         }
 
                         onValueTextChanged: updateCostPerMeter()
-                    }
-                }
-
-                Row
-                {
-                    height: parent.rowHeight
-                    spacing: UM.Theme.getSize("narrow_margin").width
-                    UM.Label
-                    {
-                        height: informationPage.rowHeight
-                        width: informationPage.columnWidth
-                        text: catalog.i18nc("@label", "Filament Cost")
-                    }
-
-                    Cura.NumericTextFieldWithUnit
-                    {
-                        id: spoolCostTextField
-                        valueText: base.getMaterialPreferenceValue(properties.guid, "spool_cost")
-                        controlWidth: informationPage.columnWidth
-                        controlHeight: informationPage.rowHeight
-                        spacing: 0
-                        unitText: base.currency
-                        decimals: 2
-                        maximum: 100000000
-
-                        editingFinishedFunction: function()
-                        {
-                            var modified_text = valueText.replace(",", ".");
-                            base.setMaterialPreferenceValue(properties.guid, "spool_cost", modified_text);
-                        }
-
-                        onValueTextChanged: updateCostPerMeter()
-                    }
-                }
-
-                Row
-                {
-                    height: parent.rowHeight
-                    spacing: UM.Theme.getSize("narrow_margin").width
-                    UM.Label
-                    {
-                        height: informationPage.rowHeight
-                        width: informationPage.columnWidth
-                        text: catalog.i18nc("@label", "Filament weight")
-                    }
-
-                    Cura.NumericTextFieldWithUnit
-                    {
-                        id: spoolWeightTextField
-                        valueText: base.getMaterialPreferenceValue(properties.guid, "spool_weight", Cura.ContainerManager.getContainerMetaDataEntry(properties.container_id, "properties/weight"))
-                        controlWidth: informationPage.columnWidth
-                        controlHeight: informationPage.rowHeight
-                        spacing: 0
-                        unitText: " g"
-                        decimals: 0
-                        maximum: 10000
-
-                        editingFinishedFunction: function()
-                        {
-                            var modified_text = valueText.replace(",", ".")
-                            base.setMaterialPreferenceValue(properties.guid, "spool_weight", modified_text)
-                        }
-
-                        onValueTextChanged: updateCostPerMeter()
-                    }
-                }
-
-                Row
-                {
-                    height: parent.rowHeight
-                    spacing: UM.Theme.getSize("narrow_margin").width
-                    UM.Label
-                    {
-                        height: informationPage.rowHeight
-                        width: informationPage.columnWidth
-                        text: catalog.i18nc("@label", "Filament length")
-                    }
-                    UM.Label
-                    {
-                        width: informationPage.columnWidth
-                        text: "~ %1 m".arg(Math.round(base.spoolLength))
-                        height: informationPage.rowHeight
-                    }
-                }
-
-                Row
-                {
-                    height: parent.rowHeight
-                    spacing: UM.Theme.getSize("narrow_margin").width
-                    UM.Label
-                    {
-                        height: informationPage.rowHeight
-                        width: informationPage.columnWidth
-                        text: catalog.i18nc("@label", "Cost per Meter")
-                    }
-                    UM.Label
-                    {
-                        height: informationPage.rowHeight
-                        width: informationPage.columnWidth
-                        text: "~ %1 %2/m".arg(base.costPerMeter.toFixed(2)).arg(base.currency)
                     }
                 }
 
@@ -462,14 +287,14 @@ Item
                 {
                     height: parent.rowHeight
                     width: informationPage.width
-                    text: catalog.i18nc("@label", "This material is linked to %1 and shares some of its properties.").arg(base.linkedMaterialNames)
+                    text: catalog.i18nc("@label", "This syringe is linked to %1 and shares some of its properties.").arg(base.linkedMaterialNames)
                     wrapMode: Text.WordWrap
                     visible: unlinkMaterialButton.visible
                 }
                 Cura.SecondaryButton
                 {
                     id: unlinkMaterialButton
-                    text: catalog.i18nc("@label", "Unlink Material")
+                    text: catalog.i18nc("@label", "Unlink Syringe")
                     visible: base.linkedMaterialNames != ""
                     onClicked:
                     {
@@ -478,41 +303,6 @@ Item
                     }
                 }
 
-                UM.Label
-                {
-                    width: informationPage.width
-                    height: parent.rowHeight
-                    text: catalog.i18nc("@label", "Description")
-                }
-                Cura.ReadOnlyTextArea
-                {
-                    text: properties.description
-                    width: informationPage.width - scrollBar.width
-                    height: 0.4 * informationPage.width
-                    wrapMode: Text.WordWrap
-
-                    readOnly: !base.editingEnabled
-
-                    onEditingFinished: base.setMetaDataEntry("description", properties.description, text)
-                }
-
-                UM.Label
-                {
-                    width: informationPage.width
-                    height: parent.rowHeight
-                    text: catalog.i18nc("@label", "Adhesion Information")
-                }
-
-                Cura.ReadOnlyTextArea
-                {
-                    text: properties.adhesion_info
-                    width: informationPage.width - scrollBar.width
-                    height: 0.4 * informationPage.width
-                    wrapMode: Text.WordWrap
-                    readOnly: !base.editingEnabled
-
-                    onEditingFinished: base.setMetaDataEntry("adhesion_info", properties.adhesion_info, text)
-                }
             }
         }
 

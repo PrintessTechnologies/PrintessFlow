@@ -41,6 +41,6 @@ RowLayout
         checked: CuraDrive.autoBackupEnabled
         onClicked: CuraDrive.toggleAutoBackup(autoBackupEnabled.checked)
         text: catalog.i18nc("@checkbox:description", "Auto Backup")
-        tooltip: catalog.i18nc("@checkbox:description", "Automatically create a backup each day that Cura is started.")
+        tooltip: catalog.i18nc("@checkbox:description", "Automatically create a backup each day that PrintessFlow is started.")
     }
 }

@@ -52,7 +52,7 @@ Item
             id: titleLabel
             anchors.horizontalCenter: parent.horizontalCenter
             horizontalAlignment: Text.AlignHCenter
-            text: "Welcome to UltiMaker Cura"
+            text: "Welcome to PrintessFlow"
             color: UM.Theme.getColor("primary_button")
             font: UM.Theme.getFont("huge_bold")
         }

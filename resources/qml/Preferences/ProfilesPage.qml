@@ -42,6 +42,27 @@ UM.ManagementPage
 
     property bool canCreateProfile:  Cura.MachineManager.hasUserSettings
 
+    readonly property var tipColorMap: ({
+        "Nordson Olive 1.54mm ID": "#808000",
+        "Nordson Amber 1.36mm ID": "#FFBF00",
+        "Nordson Green 0.84mm ID": "#00A550",
+        "Nordson Pink 0.61mm ID": "#FF69B4",
+        "Nordson Purple 0.51mm ID": "#800080",
+        "Nordson Blue 0.41mm ID": "#0057A8",
+        "Nordson Orange 0.33mm ID": "#FF8C00",
+        "Nordson Red 0.25mm ID": "#CC0000",
+        "Nordson Clear 0.20mm ID": "#FFFFFF",
+        "Nordson Lavender 0.15mm ID": "#B57EDC",
+        "Nordson Yellow 0.10mm ID": "#FFD700"
+    })
+
+    function getCustomTipColor(name)
+    {
+        var raw = UM.Preferences.getValue("printess/tip_colors")
+        if (!raw) return ""
+        try { return JSON.parse(raw)[name] || "" } catch(e) { return "" }
+    }
+
     signal createProfile() // Click create profile from ... in Profile context menu
 
     property string newQualityNameToSelect: ""
@@ -54,9 +75,9 @@ UM.ManagementPage
         createQualityDialog.selectText();
     }
 
-    title: catalog.i18nc("@title:tab", "Profiles")
+    title: catalog.i18nc("@title:tab", "Dispense Tips")
     detailsPlaneCaption: base.currentItemDisplayName
-    scrollviewCaption: catalog.i18nc("@label", "Profiles compatible with active printer:") + "<br><b>" + Cura.MachineManager.activeMachine.name + "</b>"
+    scrollviewCaption: catalog.i18nc("@label", "Dispense Tips compatible with active printer:") + "<br><b>" + Cura.MachineManager.activeMachine.name + "</b>"
 
     hamburgerButtonVisible: hasCurrentItem
     onHamburgeButtonClicked: (hamburger_button) => {
@@ -82,6 +103,85 @@ UM.ManagementPage
     sectionRole: "section_name"
 
     model: qualityManagementModel
+
+    // Hide section headers that are not "Syringe Profile Options" (e.g. "Balanced" from built-in quality groups)
+    section.delegate: Rectangle
+    {
+        width: ListView.view ? ListView.view.width : 0
+        height: section === catalog.i18nc("@label", "Syringe Profile Options") ? (sectionLabel.height + UM.Theme.getSize("narrow_margin").height) : 0
+        clip: true
+        color: UM.Theme.getColor("background_1")
+
+        UM.Label
+        {
+            id: sectionLabel
+            visible: parent.height > 0
+            anchors.left: parent.left
+            anchors.leftMargin: UM.Theme.getSize("default_lining").width
+            anchors.verticalCenter: parent.verticalCenter
+            text: catalog.i18nc("@label", "Dispense Tip Options")
+            font: UM.Theme.getFont("default_bold")
+            color: UM.Theme.getColor("text_default")
+        }
+    }
+
+    // Hide read-only items (built-in quality profiles such as Draft, Fine, etc.)
+    delegate: Rectangle
+    {
+        width: ListView.view ? ListView.view.width - UM.Theme.getSize("scrollbar").width : 0
+        height: model.is_read_only ? 0 : childrenRect.height
+        clip: true
+        color: ListView.isCurrentItem ? UM.Theme.getColor("text_selection") : UM.Theme.getColor("main_background")
+
+        UM.Label
+        {
+            id: nameLabel
+            visible: !model.is_read_only
+            anchors.left: parent.left
+            anchors.leftMargin: UM.Theme.getSize("default_margin").width
+            anchors.right: profileOval.left
+            anchors.rightMargin: UM.Theme.getSize("narrow_margin").width
+            text: model.name
+            elide: Text.ElideRight
+            font: base.isActiveModelFunction(model, base.activeId) ? UM.Theme.getFont("default_italic") : UM.Theme.getFont("default")
+            wrapMode: Text.NoWrap
+        }
+
+        Rectangle
+        {
+            id: profileOval
+            property string resolvedColor:
+            {
+                var c = base.tipColorMap[model.name]
+                if (c !== undefined) return c
+                return base.getCustomTipColor(model.name)
+            }
+            visible: !model.is_read_only && resolvedColor !== ""
+            width: visible ? Math.round(height * 1.6) : 0
+            height: Math.round(nameLabel.contentHeight * 0.85)
+            radius: height / 2
+            color: resolvedColor !== "" ? resolvedColor : "transparent"
+            border.width: resolvedColor === "#FFFFFF" ? 1 : 0
+            border.color: "#888888"
+            anchors.verticalCenter: nameLabel.verticalCenter
+            anchors.right: parent.right
+            anchors.rightMargin: UM.Theme.getSize("default_margin").width
+        }
+
+        MouseArea
+        {
+            anchors.fill: parent
+            enabled: !model.is_read_only
+            onClicked:
+            {
+                if (!parent.ListView.isCurrentItem)
+                {
+                    parent.ListView.view.currentIndex = index
+                    base.itemActivated()
+                }
+            }
+        }
+    }
     buttons: [
         Cura.SecondaryButton
         {
@@ -95,7 +195,7 @@ UM.ManagementPage
 
             enabled: !Cura.MachineErrorChecker.hasError
             visible: base.canCreateProfile
-            tooltip: catalog.i18nc("@action:tooltip", "Create new profile from current settings/overrides")
+            tooltip: catalog.i18nc("@action:tooltip", "Create new dispense tip from current settings/overrides")
             onClicked:
             {
                 createQualityDialog.object = Cura.ContainerManager.makeUniqueName("<new name>")
@@ -122,7 +222,7 @@ UM.ManagementPage
         {
             anchors.left: parent.left
             anchors.right: parent.right
-            text: catalog.i18nc("@action:label", "Some settings from current profile were overwritten.")
+            text: catalog.i18nc("@action:label", "Some settings from current dispense tip were overwritten.")
             visible: currentSettingsActions.visible
         }
 
@@ -131,16 +231,16 @@ UM.ManagementPage
             id: currentSettingsActions
             width: parent.width
 
-            visible: base.hasCurrentItem && base.currentItem.name == Cura.MachineManager.activeQualityOrQualityChangesName && base.currentItem.intent_category == Cura.MachineManager.activeIntentCategory
+            visible: false
 
             spacing: UM.Theme.getSize("default_margin").width
 
             Cura.SecondaryButton
             {
-                text: catalog.i18nc("@action:button", "Update profile.")
+                text: catalog.i18nc("@action:button", "Update dispense tip.")
                 enabled: Cura.MachineManager.hasUserSettings && objectList.currentIndex && !objectList.currentIndex.is_read_only
                 onClicked: Cura.ContainerManager.updateQualityChanges()
-                tooltip: catalog.i18nc("@action:tooltip", "Update profile with current settings/overrides")
+                tooltip: catalog.i18nc("@action:tooltip", "Update dispense tip with current settings/overrides")
             }
 
             Cura.SecondaryButton
@@ -155,14 +255,14 @@ UM.ManagementPage
         {
             id: defaultsMessage
             visible: false
-            text: catalog.i18nc("@action:label", "This profile uses the defaults specified by the printer, so it has no settings/overrides in the list below.")
+            text: catalog.i18nc("@action:label", "This dispense tip uses the defaults specified by the printer, so it has no settings/overrides in the list below.")
             width: parent.width
         }
         UM.Label
         {
             id: noCurrentSettingsMessage
             visible: base.isCurrentItemActivated && !Cura.MachineManager.hasUserSettings
-            text: catalog.i18nc("@action:label", "Your current settings match the selected profile.")
+            text: catalog.i18nc("@action:label", "Your current settings match the selected dispense tip.")
             width: parent.width
         }
 
@@ -275,9 +375,9 @@ UM.ManagementPage
         Cura.RenameDialog
         {
             id: createQualityDialog
-            title: catalog.i18nc("@title:window", "Create Profile")
+            title: catalog.i18nc("@title:window", "Create Dispense Tip")
             object: "<new name>"
-            explanation: catalog.i18nc("@info", "Please provide a name for this profile.")
+            explanation: catalog.i18nc("@info", "Please provide a name for this dispense tip.")
             onAccepted:
             {
                 base.newQualityNameToSelect = newName;  // We want to switch to the new profile once it's created
@@ -296,6 +396,11 @@ UM.ManagementPage
                 enabled: !isCurrentItemActivated && base.currentItem
                 onTriggered:
                 {
+                    // Auto-save current profile's live edits before switching, then clear
+                    // userChanges so the incoming profile loads with its own clean settings.
+                    Cura.ContainerManager.updateQualityChanges()
+                    Cura.ContainerManager.clearUserContainers()
+
                     if(base.currentItem.is_read_only)
                     {
                         Cura.IntentManager.selectIntent(base.currentItem.intent_category, base.currentItem.quality_type)
@@ -379,7 +484,7 @@ UM.ManagementPage
         Cura.RenameDialog
         {
             id: duplicateQualityDialog
-            title: catalog.i18nc("@title:window", "Duplicate Profile")
+            title: catalog.i18nc("@title:window", "Duplicate Dispense Tip")
             object: "<new name>"
             onAccepted: base.qualityManagementModel.duplicateQualityChanges(newName, base.currentItem)
         }
@@ -406,7 +511,7 @@ UM.ManagementPage
         Cura.RenameDialog
         {
             id: renameQualityDialog
-            title: catalog.i18nc("@title:window", "Rename Profile")
+            title: catalog.i18nc("@title:window", "Rename Dispense Tip")
             object: "<new name>"
             onAccepted:
             {

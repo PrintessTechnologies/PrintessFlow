@@ -69,6 +69,8 @@ class MachineManager(QObject):
 
         self._default_extruder_position = "0"  # to be updated when extruders are switched on and off
         self._num_user_settings = 0
+        self._same_extruder_sync = False        # type: bool
+        self._extruder_sync_in_progress = False  # type: bool
 
         self._instance_container_timer = QTimer()  # type: QTimer
         self._instance_container_timer.setInterval(250)
@@ -97,6 +99,7 @@ class MachineManager(QObject):
 
         self.globalContainerChanged.connect(self.activeStackChanged)
         ExtruderManager.getInstance().activeExtruderChanged.connect(self.activeStackChanged)
+        self.activeStackChanged.connect(self._reconnectSameExtruderSyncListener)
         self.activeStackChanged.connect(self.activeStackValueChanged)
 
         self._application.getPreferences().addPreference("cura/active_machine", "")
@@ -147,6 +150,7 @@ class MachineManager(QObject):
     extruderChanged = pyqtSignal()  # Emitted whenever an extruder is activated or deactivated or the default extruder changes.
 
     activeStackValueChanged = pyqtSignal()  # Emitted whenever a value inside the active stack is changed.
+    sameExtruderSyncChanged = pyqtSignal()  # Emitted when the "Same Extruder Materials" sync toggle changes.
     activeStackValidationChanged = pyqtSignal()  # Emitted whenever a validation inside active container is changed
     stacksValidationChanged = pyqtSignal()  # Emitted whenever a validation is changed
     numberExtrudersEnabledChanged = pyqtSignal()  # Emitted when the number of extruders that are enabled changed
@@ -702,18 +706,103 @@ class MachineManager(QObject):
 
     @pyqtSlot()
     def copyAllValuesToExtruders(self) -> None:
-        """Copy the value of all manually changed settings of the current extruder to all other extruders."""
+        """Copy all resolved per-extruder setting values from extruder 0 to all other extruders."""
 
-        if self._active_container_stack is None or self._global_container_stack is None:
+        Logger.log("d", "PRINTESS: copyAllValuesToExtruders called")
+
+        if self._global_container_stack is None or len(self._global_container_stack.extruderList) < 1:
+            Logger.log("d", "PRINTESS: no global stack or extruders, returning early")
             return
 
-        for extruder_stack in self._global_container_stack.extruderList:
-            if extruder_stack != self._active_container_stack:
-                for key in self._active_container_stack.userChanges.getAllKeys():
-                    new_value = self._active_container_stack.getProperty(key, "value")
+        source_stack = self._global_container_stack.extruderList[0]
+        definition = self._global_container_stack.definition
 
-                    # Check if the value has to be replaced
-                    extruder_stack.userChanges.setProperty(key, "value", new_value)
+        for extruder_stack in self._global_container_stack.extruderList[1:]:
+            # Clear all existing overrides on destination so nothing bleeds through
+            extruder_stack.userChanges.clear()
+            # Copy every per-extruder setting's resolved value from extruder 0
+            for key in self.getAllSettingKeys():
+                try:
+                    if not definition.getProperty(key, "settable_per_extruder"):
+                        continue
+                    new_value = source_stack.getProperty(key, "value")
+                    if new_value is not None:
+                        extruder_stack.userChanges.setProperty(key, "value", new_value)
+                except Exception:
+                    pass
+
+    @pyqtProperty(bool, notify = sameExtruderSyncChanged)
+    def sameExtruderSync(self) -> bool:
+        """Whether 'Same Extruder Materials' sync mode is active."""
+        return self._same_extruder_sync
+
+    @pyqtSlot()
+    def toggleExtruderSync(self) -> None:
+        """Toggle mirroring of all settings from extruder 1 to extruder 2."""
+        enabled = not self._same_extruder_sync
+        self._disconnectSameExtruderSyncListener()
+        self._same_extruder_sync = enabled
+        if enabled:
+            self._connectExtruder0SyncListener()
+            self._copyExtruder0ToExtruder1()
+        self.sameExtruderSyncChanged.emit()
+
+    def _connectExtruder0SyncListener(self) -> None:
+        """Connect the sync listener to extruder 0 (Material 1) using the stack-level signal."""
+        if self._global_container_stack is None or len(self._global_container_stack.extruderList) < 1:
+            return
+        self._global_container_stack.extruderList[0].propertyChanged.connect(self._onSyncExtruderProperty)
+
+    def _disconnectSameExtruderSyncListener(self) -> None:
+        """Safely disconnect the sync listener from extruder 0."""
+        if self._global_container_stack is None or len(self._global_container_stack.extruderList) < 1:
+            return
+        try:
+            self._global_container_stack.extruderList[0].propertyChanged.disconnect(self._onSyncExtruderProperty)
+        except (RuntimeError, TypeError):
+            pass
+
+    def _reconnectSameExtruderSyncListener(self) -> None:
+        pass
+
+    def _setupExtruderSync(self) -> None:
+        """Called when the global container (machine) changes. Connects the always-on sync listener and does initial copy."""
+        self._disconnectSameExtruderSyncListener()
+        self._same_extruder_sync = True
+        self._connectExtruder0SyncListener()
+        self._copyExtruder0ToExtruder1()
+
+    def _copyExtruder0ToExtruder1(self) -> None:
+        """Copy all per-extruder setting values from extruder 0 (Material 1) to extruder 1 (Material 2)."""
+        if self._global_container_stack is None or len(self._global_container_stack.extruderList) < 2:
+            return
+        extruder_0 = self._global_container_stack.extruderList[0]
+        extruder_1 = self._global_container_stack.extruderList[1]
+        for key in self.getAllSettingKeys():
+            try:
+                if not extruder_0.getProperty(key, "settable_per_extruder"):
+                    continue
+                new_value = extruder_0.getProperty(key, "value")
+                if extruder_1.getProperty(key, "value") != new_value:
+                    extruder_1.userChanges.setProperty(key, "value", new_value)
+            except Exception:
+                pass
+
+    def _onSyncExtruderProperty(self, key: str, property_name: str) -> None:
+        """When a setting on extruder 0 (Material 1) changes, mirror it to extruder 1 (Material 2)."""
+        if not self._same_extruder_sync or property_name != "value" or self._extruder_sync_in_progress:
+            return
+        if self._global_container_stack is None or len(self._global_container_stack.extruderList) < 2:
+            return
+        extruder_0 = self._global_container_stack.extruderList[0]
+        extruder_1 = self._global_container_stack.extruderList[1]
+        new_value = extruder_0.getProperty(key, "value")
+        if extruder_1.getProperty(key, "value") != new_value:
+            self._extruder_sync_in_progress = True
+            try:
+                extruder_1.userChanges.setProperty(key, "value", new_value)
+            finally:
+                self._extruder_sync_in_progress = False
 
     @pyqtProperty(str, notify = globalContainerChanged)
     def activeQualityDefinitionId(self) -> str:
@@ -1127,6 +1216,11 @@ class MachineManager(QObject):
         if changed:
             self.activeMaterialChanged.emit()
 
+        # Keep material_diameter in definitionChanges in sync with the actual
+        # material diameter. This handles both startup (file-based value may
+        # differ from the material's stored diameter) and material switches.
+        self._syncDiametersFromMaterials()
+
     @pyqtProperty("QVariant", notify = rootMaterialChanged)
     def currentRootMaterialId(self) -> Dict[str, str]:
         return self._current_root_material_id
@@ -1183,6 +1277,7 @@ class MachineManager(QObject):
         quality_changes_group.intent_category = "default"
 
     def _setQualityChangesGroup(self, quality_changes_group: "QualityChangesGroup") -> None:
+        Logger.log("i", "[Printess] _setQualityChangesGroup called: %s", quality_changes_group.name if quality_changes_group else "None")
         if self._global_container_stack is None:
             return  # Can't change that.
         quality_type = quality_changes_group.quality_type
@@ -1564,9 +1659,55 @@ class MachineManager(QObject):
             self._setMaterial(position, container_node)
             self._updateQualityWithMaterial()
 
+        # Sync the selected material's diameter to the extruder's compatible material diameter setting.
+        self._syncMaterialDiameter(position, container_node)
+
         # See if we need to show the Discard or Keep changes screen
         if self.hasUserSettings and self._application.getPreferences().getValue("cura/active_mode") == 1:
             self._application.discardOrKeepProfileChanges()
+
+    def _syncMaterialDiameter(self, position: str, container_node) -> None:
+        """Update the extruder's material_diameter setting to match the selected material's actual diameter."""
+        if self._global_container_stack is None:
+            return
+        try:
+            extruder_stack = self._global_container_stack.extruderList[int(position)]
+        except (IndexError, ValueError):
+            return
+        # Read from ROOT material via base_file so per-machine copies don't shadow recent edits
+        base_file = container_node.getMetaDataEntry("base_file", "")
+        if base_file:
+            root_list = self._container_registry.findContainers(id = base_file)
+            source = root_list[0] if root_list else container_node
+        else:
+            source = container_node
+        properties = source.getMetaDataEntry("properties", {})
+        if not isinstance(properties, dict):
+            return
+        diameter_str = properties.get("diameter", "")
+        if not diameter_str:
+            return
+        try:
+            diameter = float(diameter_str)
+            extruder_stack.definitionChanges.setProperty("material_diameter", "value", diameter)
+        except (ValueError, TypeError):
+            pass
+
+    @pyqtSlot(int)
+    def syncLineWidthToNozzle(self, extruder_position: int) -> None:
+        """Sync line_width from the specified extruder's print settings to its machine_nozzle_size."""
+        if self._global_container_stack is None:
+            return
+        try:
+            extruder_stack = self._global_container_stack.extruderList[extruder_position]
+        except IndexError:
+            return
+        line_width = extruder_stack.getProperty("line_width", "value")
+        if line_width is not None:
+            try:
+                extruder_stack.definitionChanges.setProperty("machine_nozzle_size", "value", float(line_width))
+            except (ValueError, TypeError):
+                pass
 
     @pyqtSlot(str, str)
     def setVariantByName(self, position: str, variant_name: str) -> None:
@@ -1741,15 +1882,51 @@ class MachineManager(QObject):
             return ""
         return quality_group.getName()
 
+    @pyqtSlot(str)
+    def setQualityChangesGroupByName(self, name: str) -> None:
+        """Called from QML profile dropdown. Looks up the QualityChangesGroup by name and switches to it."""
+        Logger.log("i", "[Printess] setQualityChangesGroupByName called: %s", name)
+        Message("[Printess] Switching to: " + name, lifetime = 5).show()
+        quality_changes_list = ContainerTree.getInstance().getCurrentQualityChangesGroups()
+        for qcg in quality_changes_list:
+            if qcg.name == name:
+                self.setQualityChangesGroup(qcg)
+                return
+        Logger.log("w", "[Printess] No quality changes group found with name: %s", name)
+
     @pyqtSlot(QObject)
     def setQualityChangesGroup(self, quality_changes_group: "QualityChangesGroup", no_dialog: bool = False) -> None:
         self.blurSettings.emit()
+        Logger.log("i", "[Printess] setQualityChangesGroup called: %s", quality_changes_group.name if quality_changes_group else "None")
+
+        # Before switching profiles: merge user_changes into the current quality_changes
+        # so each profile keeps its own independent values, then clear user_changes
+        # so the incoming profile is not contaminated.
+        if self._global_container_stack is not None:
+            for stack in [self._global_container_stack] + self._global_container_stack.extruderList:
+                user_changes = stack.userChanges
+                quality_changes = stack.qualityChanges
+                uc_keys = list(user_changes.getAllKeys())
+                Logger.log("i", "[Printess]   stack=%s, qc_id=%s, uc_keys=%s", stack.getId(), quality_changes.getId() if quality_changes is not None else "None", uc_keys)
+                if quality_changes is not None and quality_changes.getId() != "empty_quality_changes":
+                    for key in uc_keys:
+                        val = user_changes.getProperty(key, "value")
+                        quality_changes.setProperty(key, "value", val)
+                        Logger.log("i", "[Printess]     saved %s = %s to qc", key, val)
+                user_changes.clear()
+                user_changes.setDirty(True)
+                Logger.log("i", "[Printess]   user_changes cleared")
+
         with postponeSignals(*self._getContainerChangedSignals(), compress = CompressTechnique.CompressPerParameterValue):
             self._setQualityChangesGroup(quality_changes_group)
 
-        # See if we need to show the Discard or Keep changes screen
-        if not no_dialog and self.hasUserSettings and self._application.getPreferences().getValue("cura/active_mode") == 1:
-            self._application.discardOrKeepProfileChanges()
+        if self._global_container_stack is not None:
+            gstack = self._global_container_stack
+            Logger.log("i", "[Printess]   AFTER switch: qc_id=%s, qc_lh=%s, uc_lh=%s",
+                gstack.qualityChanges.getId(),
+                gstack.qualityChanges.getProperty("layer_height", "value"),
+                gstack.userChanges.getProperty("layer_height", "value")
+            )
 
     @pyqtSlot()
     def resetToUseDefaultQuality(self) -> None:
@@ -1803,12 +1980,111 @@ class MachineManager(QObject):
             return False
         return global_stack.qualityChanges != empty_quality_changes_container
 
-    def updateUponMaterialMetadataChange(self) -> None:
+    def _syncDiametersFromMaterials(self) -> None:
+        """Sync material_diameter in definitionChanges for every extruder from its active material.
+        Reads from the ROOT material (via base_file) because setContainerMetaDataEntry only updates
+        the root, not the per-machine copy that extruder_stack.material may point to."""
         if self._global_container_stack is None:
             return
-        with postponeSignals(*self._getContainerChangedSignals(), compress = CompressTechnique.CompressPerParameterValue):
-            self.updateMaterialWithVariant(None)
-            self._updateQualityWithMaterial()
+        for extruder_stack in self._global_container_stack.extruderList:
+            material = extruder_stack.material
+            if material is None:
+                continue
+            mat_id = material.getId()
+            base_file = material.getMetaDataEntry("base_file", "")
+            Logger.log("d", "PF_SYNC: extruder material=%s base_file=%s", mat_id, base_file)
+            if base_file:
+                root_list = self._container_registry.findContainers(id = base_file)
+                source_material = root_list[0] if root_list else material
+            else:
+                source_material = material
+            properties = source_material.getMetaDataEntry("properties", {})
+            Logger.log("d", "PF_SYNC: source=%s properties=%s", source_material.getId(), properties)
+            if not isinstance(properties, dict):
+                Logger.log("d", "PF_SYNC: properties is not a dict, skipping")
+                continue
+            diameter_str = properties.get("diameter", "")
+            if not diameter_str:
+                Logger.log("d", "PF_SYNC: no diameter in properties, skipping")
+                continue
+            try:
+                diameter = float(diameter_str)
+                Logger.log("d", "PF_SYNC: setting material_diameter=%s for extruder definitionChanges id=%s",
+                           diameter, extruder_stack.definitionChanges.getId())
+                extruder_stack.definitionChanges.setProperty("material_diameter", "value", diameter)
+                Logger.log("d", "PF_SYNC: done")
+            except (ValueError, TypeError) as e:
+                Logger.log("d", "PF_SYNC: exception %s", e)
+
+    def updateUponMaterialMetadataChange(self) -> None:
+        Logger.log("d", "PF: updateUponMaterialMetadataChange called")
+        if self._global_container_stack is None:
+            Logger.log("d", "PF: no global stack, returning")
+            return
+        try:
+            with postponeSignals(*self._getContainerChangedSignals(), compress = CompressTechnique.CompressPerParameterValue):
+                self.updateMaterialWithVariant(None)
+                self._updateQualityWithMaterial()
+        except Exception as e:
+            Logger.log("w", "PF: exception in postponeSignals block: %s", e)
+        Logger.log("d", "PF: after postponeSignals block, calling sync")
+        self._syncDiametersFromMaterials()
+        # Force-save root material containers immediately so changes persist even if the
+        # user restarts before the auto-save timer fires.
+        self._saveDirtyMaterialContainers()
+        Logger.log("d", "PF: updateUponMaterialMetadataChange done")
+
+    def _saveDirtyMaterialContainers(self) -> None:
+        """Force-save root material containers to disk after a metadata change.
+
+        Cura normally defers saves to an auto-save timer, so a rapid restart can lose
+        changes.  We bypass the timer by saving via the container's own source provider
+        (the local filesystem provider for AppData materials).
+
+        We do NOT check isDirty() here because setContainerMetaDataEntry modifies the
+        'properties' sub-dict in-place before passing it back to setMetaDataEntry.
+        InstanceContainer.setMetaDataEntry then sees self._metadata["properties"] is the
+        same object reference as the new value, so "!= value" is False and _dirty is
+        never set — even though the diameter actually changed.  Saving unconditionally is
+        safe because this method is only ever called from updateUponMaterialMetadataChange,
+        which is itself only called by ContainerManager.setContainerMetaDataEntry (i.e.
+        only when the user explicitly edits a material property in the UI).
+        """
+        if self._global_container_stack is None:
+            return
+        saved_ids: Set[str] = set()
+        for extruder_stack in self._global_container_stack.extruderList:
+            material = extruder_stack.material
+            if material is None:
+                continue
+            base_file = material.getMetaDataEntry("base_file", "")
+            Logger.log("d", "PF_SAVE: material=%s base_file=%s", material.getId(), base_file)
+            # Collect containers to save: prefer the root (via base_file), but always
+            # also include the material itself in case base_file is unset.
+            containers_to_save = []
+            if base_file:
+                root_list = self._container_registry.findContainers(id=base_file)
+                if root_list:
+                    containers_to_save.append(root_list[0])
+            # Also save the material container itself (handles root-is-active or missing base_file)
+            if not any(c.getId() == material.getId() for c in containers_to_save):
+                containers_to_save.append(material)
+            for container in containers_to_save:
+                cid = container.getId()
+                if cid in saved_ids:
+                    continue
+                try:
+                    provider = self._container_registry.source_provider.get(cid)
+                    Logger.log("d", "PF_SAVE: container=%s provider=%s", cid, provider)
+                    if provider and hasattr(provider, "saveContainer"):
+                        provider.saveContainer(container)
+                        container.setDirty(False)
+                        saved_ids.add(cid)
+                        Logger.log("d", "Force-saved material container %s after metadata change.", cid)
+                    else:
+                        Logger.log("w", "No writable provider found for material container %s; relying on auto-save.", cid)
+                except Exception as e:
+                    Logger.log("w", "Could not force-save material container %s: %s", cid, e)
 
     @pyqtSlot(str, result = str)
     def getAbbreviatedMachineName(self, machine_type_name: str) -> str:

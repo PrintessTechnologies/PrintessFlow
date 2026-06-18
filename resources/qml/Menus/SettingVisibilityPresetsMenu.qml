@@ -21,7 +21,7 @@ Cura.Menu
 
     Models.Instantiator
     {
-        model: settingVisibilityPresetsModel.items
+        model: settingVisibilityPresetsModel.items.filter(function(item) { return item.presetId !== "custom" })
 
         Cura.MenuItem
         {

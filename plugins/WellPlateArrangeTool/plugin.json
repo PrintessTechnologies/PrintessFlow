@@ -1,0 +1,7 @@
+{
+    "name": "Well Plate Arrange Tool",
+    "author": "Printess Technologies",
+    "version": "1.0.0",
+    "description": "Arranges objects on the build plate in a well-plate grid pattern.",
+    "api": 8
+}

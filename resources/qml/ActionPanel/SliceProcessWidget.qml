@@ -91,6 +91,139 @@ Column
         visible: (widget.backendState == UM.Backend.Processing || (prepareButtons.autoSlice && widget.backendState == UM.Backend.NotStarted))
     }
 
+    // Printess: per-axis homing toggles + zero-offset fields, shown directly above
+    // the Slice button. This whole widget is unloaded once output is available, so the
+    // section is automatically hidden after slicing. The state is stored in preferences
+    // and read by the Printess post-processing scripts, which build the startup
+    // homing (G28) + offset move + zero (G92) block from it.
+    Column
+    {
+        id: homingSection
+        width: parent.width
+        spacing: UM.Theme.getSize("narrow_margin").height
+        bottomPadding: UM.Theme.getSize("narrow_margin").height
+
+        // Width of each numeric zero-offset field.
+        readonly property real offsetFieldWidth: Math.round(UM.Theme.getSize("setting_control").width * 0.45)
+
+        // Thin divider that separates the homing options from the controls above.
+        Rectangle
+        {
+            width: parent.width
+            height: UM.Theme.getSize("default_lining").height
+            color: UM.Theme.getColor("lining")
+        }
+
+        UM.Label
+        {
+            text: catalog.i18nc("@label", "Homing")
+            // Printess brand red — the same tone as the main window header.
+            color: UM.Theme.getColor("main_window_header_button_text_active")
+            font: UM.Theme.getFont("default_bold")
+        }
+
+        // Row: XY homing toggle + X / Y zero-offset fields.
+        RowLayout
+        {
+            width: parent.width
+            spacing: UM.Theme.getSize("narrow_margin").width
+
+            UM.CheckBox
+            {
+                id: homeXYCheckbox
+                text: catalog.i18nc("@option:check", "XY Axes")
+                // Indent the toggles slightly under the section title.
+                leftPadding: UM.Theme.getSize("default_margin").width
+                checked: UM.Preferences.getValue("printess/home_xy")
+                onClicked: UM.Preferences.setValue("printess/home_xy", checked)
+            }
+
+            // Spacer that right-aligns the offset fields.
+            Item { Layout.fillWidth: true }
+
+            UM.Label { text: catalog.i18nc("@label", "X"); Layout.alignment: Qt.AlignVCenter }
+            Cura.TextField
+            {
+                id: offsetXField
+                Layout.preferredWidth: homingSection.offsetFieldWidth
+                Layout.alignment: Qt.AlignVCenter
+                enabled: homeXYCheckbox.checked
+                text: UM.Preferences.getValue("printess/zero_offset_x")
+                validator: DoubleValidator { locale: "en_US"; notation: DoubleValidator.StandardNotation }
+                onEditingFinished: UM.Preferences.setValue("printess/zero_offset_x", text)
+            }
+
+            UM.Label { text: catalog.i18nc("@label", "Y"); Layout.alignment: Qt.AlignVCenter }
+            Cura.TextField
+            {
+                id: offsetYField
+                Layout.preferredWidth: homingSection.offsetFieldWidth
+                Layout.alignment: Qt.AlignVCenter
+                enabled: homeXYCheckbox.checked
+                text: UM.Preferences.getValue("printess/zero_offset_y")
+                validator: DoubleValidator { locale: "en_US"; notation: DoubleValidator.StandardNotation }
+                onEditingFinished: UM.Preferences.setValue("printess/zero_offset_y", text)
+            }
+        }
+
+        // Row: Z & A homing toggle + Z / A zero-offset fields.
+        RowLayout
+        {
+            width: parent.width
+            spacing: UM.Theme.getSize("narrow_margin").width
+
+            UM.CheckBox
+            {
+                id: homeZACheckbox
+                text: catalog.i18nc("@option:check", "Z & A Axis")
+                leftPadding: UM.Theme.getSize("default_margin").width
+                checked: UM.Preferences.getValue("printess/home_za")
+                onClicked: UM.Preferences.setValue("printess/home_za", checked)
+            }
+
+            Item { Layout.fillWidth: true }
+
+            UM.Label { text: catalog.i18nc("@label", "Z"); Layout.alignment: Qt.AlignVCenter }
+            Cura.TextField
+            {
+                id: offsetZField
+                Layout.preferredWidth: homingSection.offsetFieldWidth
+                Layout.alignment: Qt.AlignVCenter
+                enabled: homeZACheckbox.checked
+                text: UM.Preferences.getValue("printess/zero_offset_z")
+                validator: DoubleValidator { locale: "en_US"; notation: DoubleValidator.StandardNotation }
+                onEditingFinished: UM.Preferences.setValue("printess/zero_offset_z", text)
+            }
+
+            UM.Label { text: catalog.i18nc("@label", "A"); Layout.alignment: Qt.AlignVCenter }
+            Cura.TextField
+            {
+                id: offsetAField
+                Layout.preferredWidth: homingSection.offsetFieldWidth
+                Layout.alignment: Qt.AlignVCenter
+                enabled: homeZACheckbox.checked
+                text: UM.Preferences.getValue("printess/zero_offset_a")
+                validator: DoubleValidator { locale: "en_US"; notation: DoubleValidator.StandardNotation }
+                onEditingFinished: UM.Preferences.setValue("printess/zero_offset_a", text)
+            }
+        }
+
+        // Caption clarifying the fields are per-axis zero offsets in millimetres.
+        Item
+        {
+            width: parent.width
+            height: offsetCaption.height
+            UM.Label
+            {
+                id: offsetCaption
+                anchors.right: parent.right
+                text: catalog.i18nc("@label", "(zero offset, mm)")
+                font: UM.Theme.getFont("small")
+                color: UM.Theme.getColor("text_inactive")
+            }
+        }
+    }
+
     Item
     {
         id: prepareButtons

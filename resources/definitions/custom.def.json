@@ -10,6 +10,7 @@
         "file_formats": "text/x-gcode",
         "first_start_actions": [ "MachineSettingsAction" ],
         "has_materials": true,
+        "nozzle_offsetting_for_disallowed_areas": false,
         "machine_extruder_trains":
         {
             "0": "custom_extruder_1",

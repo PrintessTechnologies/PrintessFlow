@@ -1,0 +1,8 @@
+{
+    "name": "PrintessAllMaterials",
+    "author": "Printess Technologies",
+    "version": "1.0.0",
+    "description": "Overrides MaterialBrandsModel to show all syringe materials regardless of barrel diameter.",
+    "api": 8,
+    "i18n-catalog": "cura"
+}

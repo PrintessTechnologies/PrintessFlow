@@ -65,13 +65,12 @@ Cura.Menu
             visible: !model.hasRemoteConnection
             onTriggered: Cura.MachineManager.setActiveMachine(model.id)
         }
-        // A bit hackish, but we have 2 items at the end, put them before that
-        onObjectAdded: function(index, object) { menu.insertItem(menu.count - 2, object) }
+        // A bit hackish, but we have 1 item at the end, put them before that
+        onObjectAdded: function(index, object) { menu.insertItem(menu.count - 1, object) }
         onObjectRemoved: function(index, object) {  menu.removeItem(object) }
     }
 
     Cura.MenuSeparator { visible: localPrinterInstantiator.count > 0 }
 
-    Cura.MenuItem { action: Cura.Actions.addMachine }
     Cura.MenuItem { action: Cura.Actions.configureMachines }
 }

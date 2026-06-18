@@ -2,7 +2,7 @@
 //Cura is released under the terms of the LGPLv3 or higher.
 
 import QtQuick 2.6
-import QtQuick.Controls 2.0
+import QtQuick.Controls 2.15
 
 import Cura 1.0 as Cura
 import UM 1.5 as UM
@@ -30,7 +30,7 @@ Item
     UM.Label
     {
         id: header
-        text: catalog.i18nc("@header", "Custom")
+        text: catalog.i18nc("@header", "Syringe Selector")
         font: UM.Theme.getFont("medium")
         color: UM.Theme.getColor("small_button_text")
         height: contentHeight
@@ -225,7 +225,7 @@ Item
 
                 UM.Label
                 {
-                    text: catalog.i18nc("@label", "Material")
+                    text: catalog.i18nc("@label", "Syringe")
                     height: parent.height
                     width: selectors.textWidth
                 }
@@ -369,6 +369,281 @@ Item
                     }
                 }
             }
+        }
+    }
+
+    // ── Create a New Syringe flow ────────────────────────────────────────────
+
+    property var _matMgmtModel: CuraApplication.getMaterialManagementModel()
+    property string _pendingNewMatId: ""
+
+    function randomMaterialColor()
+    {
+        var h = Math.random()
+        var s = 0.75, l = 0.50
+        var c = (1 - Math.abs(2 * l - 1)) * s
+        var x = c * (1 - Math.abs((h * 6) % 2 - 1))
+        var m = l - c / 2
+        var r, g, b
+        var h6 = h * 6
+        if      (h6 < 1) { r = c; g = x; b = 0 }
+        else if (h6 < 2) { r = x; g = c; b = 0 }
+        else if (h6 < 3) { r = 0; g = c; b = x }
+        else if (h6 < 4) { r = 0; g = x; b = c }
+        else if (h6 < 5) { r = x; g = 0; b = c }
+        else             { r = c; g = 0; b = x }
+        var toHex = function(v) { var s = Math.round((v + m) * 255).toString(16); return s.length < 2 ? "0" + s : s }
+        return "#" + toHex(r) + toHex(g) + toHex(b)
+    }
+
+    function _applyNewSyringeDetails()
+    {
+        var found = false
+        for (var i = 0; i < createSyringeBrandsModel.count && !found; i++)
+        {
+            var brand = createSyringeBrandsModel.getItem(i)
+            var types = brand.material_types
+            for (var j = 0; j < types.count && !found; j++)
+            {
+                var matType = types.getItem(j)
+                var colors = matType.colors
+                for (var k = 0; k < colors.count && !found; k++)
+                {
+                    var color = colors.getItem(k)
+                    if (color.root_material_id === _pendingNewMatId)
+                    {
+                        _matMgmtModel.setMaterialName(color.container_node, "New Syringe")
+                        Cura.ContainerManager.unlinkMaterial(color.container_node)
+                        Cura.ContainerManager.setContainerMetaDataEntry(color.container_node, "color_code", randomMaterialColor())
+                        createSyringeDialog.targetNode = color.container_node
+                        createSyringeDialog.pendingMaterialId = _pendingNewMatId
+                        createSyringeDialog.open()
+                        found = true
+                    }
+                }
+            }
+        }
+        _pendingNewMatId = ""
+    }
+
+    Cura.AllMaterialBrandsModel
+    {
+        id: createSyringeBrandsModel
+        extruderPosition: Cura.ExtruderManager.activeExtruderIndex
+    }
+
+    Timer
+    {
+        id: createSyringeTimer
+        interval: 300
+        repeat: false
+        onTriggered: _applyNewSyringeDetails()
+    }
+
+    Connections
+    {
+        target: materialsMenu
+        function onCreateNewSyringeClicked()
+        {
+            var printessNode = null
+            for (var i = 0; i < createSyringeBrandsModel.count; i++)
+            {
+                var brand = createSyringeBrandsModel.getItem(i)
+                if (brand.name === "Printess")
+                {
+                    var types = brand.material_types
+                    if (types.count > 0)
+                    {
+                        var colors = types.getItem(0).colors
+                        if (colors.count > 0)
+                        {
+                            printessNode = colors.getItem(0).container_node
+                        }
+                    }
+                    break
+                }
+            }
+            if (printessNode !== null)
+            {
+                _pendingNewMatId = _matMgmtModel.duplicateMaterial(printessNode)
+                createSyringeTimer.restart()
+            }
+        }
+    }
+
+    Dialog
+    {
+        id: createSyringeDialog
+        title: catalog.i18nc("@title:window", "Configure New Syringe")
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        padding: UM.Theme.getSize("default_margin").width
+        standardButtons: Dialog.NoButton
+
+        property var targetNode: null
+        property string pendingMaterialId: ""
+
+        onClosed:
+        {
+            if (pendingMaterialId !== "")
+            {
+                Cura.MachineManager.setMaterialById(Cura.ExtruderManager.activeExtruderIndex, pendingMaterialId)
+                pendingMaterialId = ""
+            }
+        }
+
+        background: Rectangle { color: UM.Theme.getColor("detail_background") }
+
+        header: UM.Label
+        {
+            text: createSyringeDialog.title
+            font: UM.Theme.getFont("medium_bold")
+            topPadding: createSyringeDialog.padding
+            leftPadding: createSyringeDialog.padding
+            rightPadding: createSyringeDialog.padding
+        }
+
+        contentItem: Column
+        {
+            spacing: UM.Theme.getSize("default_margin").height
+            width: 320
+
+            UM.Label
+            {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: catalog.i18nc("@label", "Enter the details for your new syringe. Both fields are optional — you can edit them later in the Syringes panel.")
+            }
+
+            UM.Label
+            {
+                text: catalog.i18nc("@label", "Syringe Size")
+                font: UM.Theme.getFont("default_bold")
+            }
+
+            UM.Label
+            {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                color: UM.Theme.getColor("text_medium")
+                text: catalog.i18nc("@label", "Names the syringe \"#mL Syringe\" where # is the number you enter.")
+                font: UM.Theme.getFont("default")
+            }
+
+            Row
+            {
+                spacing: UM.Theme.getSize("narrow_margin").width
+
+                TextField
+                {
+                    id: menuSyringeField
+                    width: 120
+                    placeholderText: "e.g. 3"
+                    selectByMouse: true
+                    validator: DoubleValidator
+                    {
+                        bottom: 0.1
+                        top: 9999
+                        decimals: 2
+                        notation: DoubleValidator.StandardNotation
+                    }
+                    Keys.onReturnPressed: menuDiameterField.forceActiveFocus()
+                    Keys.onEnterPressed: menuDiameterField.forceActiveFocus()
+                }
+
+                UM.Label
+                {
+                    text: "mL"
+                    anchors.verticalCenter: menuSyringeField.verticalCenter
+                }
+            }
+
+            UM.Label
+            {
+                text: catalog.i18nc("@label", "Inner Barrel Diameter")
+                font: UM.Theme.getFont("default_bold")
+            }
+
+            UM.Label
+            {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                color: UM.Theme.getColor("text_medium")
+                text: catalog.i18nc("@label", "Sets the material's diameter field, which controls extrusion volume calculations.")
+                font: UM.Theme.getFont("default")
+            }
+
+            Row
+            {
+                spacing: UM.Theme.getSize("narrow_margin").width
+
+                TextField
+                {
+                    id: menuDiameterField
+                    width: 120
+                    placeholderText: "e.g. 4.76"
+                    selectByMouse: true
+                    validator: DoubleValidator
+                    {
+                        bottom: 0.01
+                        top: 100
+                        decimals: 4
+                        notation: DoubleValidator.StandardNotation
+                    }
+                    Keys.onReturnPressed: createSyringeDialog.applyAndClose()
+                    Keys.onEnterPressed: createSyringeDialog.applyAndClose()
+                }
+
+                UM.Label
+                {
+                    text: "mm"
+                    anchors.verticalCenter: menuDiameterField.verticalCenter
+                }
+            }
+        }
+
+        footer: Row
+        {
+            spacing: UM.Theme.getSize("default_margin").width
+            padding: createSyringeDialog.padding
+            layoutDirection: Qt.RightToLeft
+
+            Cura.PrimaryButton
+            {
+                text: catalog.i18nc("@action:button", "Apply")
+                onClicked: createSyringeDialog.applyAndClose()
+            }
+
+            Cura.SecondaryButton
+            {
+                text: catalog.i18nc("@action:button", "Skip")
+                onClicked: createSyringeDialog.close()
+            }
+        }
+
+        function applyAndClose()
+        {
+            if (targetNode !== null)
+            {
+                if (menuSyringeField.acceptableInput && menuSyringeField.text !== "")
+                {
+                    var sizeName = menuSyringeField.text.replace(",", ".") + "mL Syringe"
+                    _matMgmtModel.setMaterialName(targetNode, sizeName)
+                }
+                if (menuDiameterField.acceptableInput && menuDiameterField.text !== "")
+                {
+                    var diamVal = menuDiameterField.text.replace(",", ".")
+                    Cura.ContainerManager.setContainerMetaDataEntry(targetNode, "properties/diameter", diamVal)
+                }
+            }
+            close()
+        }
+
+        onOpened:
+        {
+            menuSyringeField.text = ""
+            menuDiameterField.text = ""
+            menuSyringeField.forceActiveFocus()
         }
     }
 }

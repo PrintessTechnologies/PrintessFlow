@@ -31,17 +31,7 @@ Item
     }
 
     // Set the current mode index to the value that is stored in the preferences or Recommended mode otherwise.
-    property int currentModeIndex:
-    {
-        var index = Math.round(UM.Preferences.getValue("cura/active_mode"))
-
-        if (index != null && !isNaN(index))
-        {
-            return index
-        }
-        return PrintSetupSelectorContents.Mode.Recommended
-    }
-    onCurrentModeIndexChanged: UM.Preferences.setValue("cura/active_mode", currentModeIndex)
+    property int currentModeIndex: PrintSetupSelectorContents.Mode.Custom
 
     Item
     {
@@ -151,15 +141,7 @@ Item
     {
         id: buttonRow
         property real padding: UM.Theme.getSize("default_margin").width
-        height:
-        {
-            const draggable_area_height = draggableArea.visible ? draggableArea.height : 0;
-            if (currentModeIndex == PrintSetupSelectorContents.Mode.Custom)
-            {
-                return recommendedButton.height + 2 * padding + draggable_area_height;
-            }
-            return draggable_area_height;
-        }
+        height: draggableArea.visible ? draggableArea.height : 0
 
         anchors
         {
@@ -171,15 +153,7 @@ Item
         Cura.SecondaryButton
         {
             id: recommendedButton
-            anchors.top: parent.top
-            anchors.left: parent.left
-            anchors.margins: parent.padding
-            leftPadding: UM.Theme.getSize("default_margin").width
-            rightPadding: UM.Theme.getSize("default_margin").width
-            text: catalog.i18nc("@button", "Recommended")
-            iconSource: UM.Theme.getIcon("ChevronSingleLeft")
-            visible: currentModeIndex == PrintSetupSelectorContents.Mode.Custom
-            onClicked: currentModeIndex = PrintSetupSelectorContents.Mode.Recommended
+            visible: false
         }
 
         //Invisible area at the bottom with which you can resize the panel.

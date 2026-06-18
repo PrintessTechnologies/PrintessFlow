@@ -296,6 +296,7 @@ class StartSliceJob(Job):
                 plugin_message.plugin_name = plugin.getPluginId()
                 plugin_message.plugin_version = plugin.getVersion()
 
+        _mesh_name_counts = {}  # ensures unique ;MESH: names across all objects
         for group in filtered_object_groups:
             group_message = self._slice_message.addRepeatedMessage("object_lists")
             parent = group[0].getParent()
@@ -320,7 +321,13 @@ class StartSliceJob(Job):
 
                 obj = group_message.addRepeatedMessage("objects")
                 obj.id = id(object)
-                obj.name = object.getName()
+                base_name = object.getName()
+                if base_name in _mesh_name_counts:
+                    _mesh_name_counts[base_name] += 1
+                    obj.name = f"{base_name} #{_mesh_name_counts[base_name]}"
+                else:
+                    _mesh_name_counts[base_name] = 1
+                    obj.name = base_name
                 indices = mesh_data.getIndices()
                 if indices is not None:
                     flat_verts = numpy.take(verts, indices.flatten(), axis=0)

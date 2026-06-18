@@ -146,3 +146,38 @@ class MachineSettingsAction(MachineAction):
     def updateMaterialForDiameter(self, extruder_position: int) -> None:
         # Updates the material container to a material that matches the material diameter set for the printer
         self._application.getMachineManager().updateMaterialWithVariant(str(extruder_position))
+
+    @pyqtSlot()
+    def syncMaterialDiameterToDefinitionChanges(self) -> None:
+        """Sync each extruder's active material diameter into its definitionChanges container.
+
+        Called when Machine Settings opens so the 'Compatible material diameter (auto)' field
+        reflects the actual diameter stored in the active material rather than the stale
+        hard-coded value from the installer.
+        """
+        from UM.Logger import Logger
+        global_stack = self._application.getMachineManager().activeMachine
+        if global_stack is None:
+            return
+
+        for extruder in global_stack.extruderList:
+            material = extruder.material
+            if material is None or isEmptyContainer(material.getId()):
+                continue
+
+            properties = material.getMetaDataEntry("properties", {})
+            diameter_str = properties.get("diameter")
+            if diameter_str is None:
+                continue
+
+            try:
+                diameter = float(diameter_str)
+            except (ValueError, TypeError):
+                continue
+
+            definition_changes = extruder.definitionChanges
+            if definition_changes is None or isEmptyContainer(definition_changes.getId()):
+                continue
+
+            definition_changes.setProperty("material_diameter", "value", diameter)
+            Logger.log("d", "PF: syncMaterialDiameter: extruder %s → %.3f mm", extruder.getId(), diameter)

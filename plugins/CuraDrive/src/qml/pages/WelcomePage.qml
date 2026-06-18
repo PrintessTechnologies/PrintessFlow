@@ -31,7 +31,7 @@ Column
     UM.Label
     {
         id: welcomeTextLabel
-        text: catalog.i18nc("@description", "Backup and synchronize your Cura settings.")
+        text: catalog.i18nc("@description", "Backup and synchronize your PrintessFlow settings.")
         width: Math.round(parent.width / 2)
         horizontalAlignment: Text.AlignHCenter
         anchors.horizontalCenter: parent.horizontalCenter

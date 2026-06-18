@@ -14,7 +14,7 @@ Item
     height: childrenRect.height
 
     // Children
-    Cura.MaterialBrandsModel
+    Cura.AllMaterialBrandsModel
     {
         id: materialsModel
         extruderPosition: Cura.ExtruderManager.activeExtruderIndex
@@ -149,6 +149,8 @@ Item
             sectionName: "Generic"
             elementsModel: genericMaterialsModel
             hasMaterialTypes: false
+            visible: false
+            height: 0
         }
 
         Repeater

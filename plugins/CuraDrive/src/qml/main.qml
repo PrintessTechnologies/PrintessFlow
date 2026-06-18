@@ -22,7 +22,7 @@ Window
     width: minimumWidth
     height: minimumHeight
     color: UM.Theme.getColor("main_background")
-    title: catalog.i18nc("@title:window", "Cura Backups")
+    title: catalog.i18nc("@title:window", "Printess Backups")
 
     // Globally available.
     UM.I18nCatalog

@@ -98,9 +98,12 @@ Item
 
     function addAdditionalComponents()
     {
-        for (var component in CuraApplication.additionalComponents["saveButton"])
+        // Iterate in reverse so the last-registered component (WellPlate) ends up
+        // leftmost — each reparent call moves an existing child to the end of the row.
+        var comps = CuraApplication.additionalComponents["saveButton"]
+        for (var i = comps.length - 1; i >= 0; i--)
         {
-            CuraApplication.additionalComponents["saveButton"][component].parent = additionalComponentsRow
+            comps[i].parent = additionalComponentsRow
         }
     }
 }

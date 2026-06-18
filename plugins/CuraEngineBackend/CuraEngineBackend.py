@@ -986,25 +986,6 @@ class CuraEngineBackend(QObject, Backend):
             else:
                 material_amounts.append(material_use_for_tool)
 
-        if self._unused_extruders:
-            extruder_names = [self._global_container_stack.extruderList[int(idx)].definition.getName() for idx in self._unused_extruders]
-            unused_extruders = [f"<li>{extruder_name}</li>" for extruder_name in extruder_names]
-            warning_message = Message(
-                text=catalog.i18nc("@message", "<html>At least one extruder remains unused in this print:"
-                                               f"<ul><b>{"".join(unused_extruders)}</b></ul><br/>This can sometimes become a problem, "
-                                               "for example when the bed temperature is adjusted for the material present in the unused extruder. "
-                                               "It might be desirable to disable these unused extruders.</html>"),
-                title=catalog.i18nc("@message:title", "Unused Extruder(s)"),
-                message_type=Message.MessageType.WARNING
-            )
-            warning_message.addAction("disable_extruders",
-                name=catalog.i18nc("@button", "Disable unused extruder(s)"),
-                icon="",
-                description=catalog.i18nc("@label", "Automatically disable the unused extruder(s)")
-            )
-            warning_message.actionTriggered.connect(self._onMessageActionTriggered)
-            warning_message.show()
-
         times = self._parseMessagePrintTimes(message)
         self.printDurationMessage.emit(self._start_slice_job_build_plate, times, material_amounts)
 

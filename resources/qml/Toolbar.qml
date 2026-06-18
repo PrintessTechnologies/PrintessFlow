@@ -60,8 +60,8 @@ Item
                     checked: model.active
                     enabled: model.enabled && UM.Selection.hasSelection && UM.Controller.toolsEnabled
 
-                    isTopElement: toolsModel.getItem(0).id == model.id
-                    isBottomElement: toolsModel.getItem(toolsModel.count - 1).id == model.id
+                    isTopElement: toolsModel.getItem(0).id === model.id
+                    isBottomElement: toolsModel.getItem(toolsModel.rowCount() - 1).id === model.id
 
                     toolItem: UM.ColorImage
                     {
@@ -152,6 +152,7 @@ Item
                 }
             }
         }
+
     }
 
     property var extrudersModel: CuraApplication.getExtrudersModel()
