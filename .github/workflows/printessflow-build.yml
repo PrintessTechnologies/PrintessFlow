@@ -1,40 +1,40 @@
 name: PrintessFlow Build
 
-# Custom build pipeline for the PrintessFlow fork. Self-contained: builds from the
-# local source via Conan on GitHub-hosted runners (no UltiMaker self-hosted runners,
-# no UltiMaker credentials). Manual trigger only.
+# Custom from-source build pipeline for the PrintessFlow fork. Self-contained:
+# builds the LOCAL source via Conan on GitHub-hosted runners using UltiMaker's
+# public Conan packages anonymously (no UltiMaker credentials, no self-hosted
+# runners). Manual trigger only.
 on:
   workflow_dispatch:
 
 jobs:
-  resolve-deps:
-    name: Resolve Conan dependencies (anonymous access check)
-    runs-on: ubuntu-latest
+  build-windows:
+    name: Windows build (validate conan install of local source)
+    runs-on: windows-2022
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Set up build environment (UltiMaker action, anonymous Conan)
+        id: setup-environment
+        uses: ultimaker/cura-workflows/.github/actions/setup-build-environment@main
         with:
-          fetch-depth: 0  # full history + tags; conanfile.py reads version via GitPython
+          install_system_dependencies: true
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set package overrides (installer profile)
+        id: set-overrides
+        uses: ultimaker/cura-workflows/.github/actions/set-package-overrides@main
         with:
-          python-version: '3.12'
+          package_overrides: ''
+          profile: installer.jinja
 
-      - name: Install Conan and conanfile.py dependencies
-        run: |
-          pip install "conan>=2.7,<3" gitpython requests pyyaml jinja2
-          conan --version
+      - name: Conan install (build PrintessFlow from local source)
+        run: conan install . --build=missing --update -of cura_inst --deployer-package="*" --profile ${{ steps.set-overrides.outputs.profile }}
 
-      - name: Configure Conan (UltiMaker remotes, no login)
+      - name: Show generated build files
+        if: always()
+        shell: bash
         run: |
-          conan profile detect -f
-          conan config install https://github.com/Ultimaker/conan-config.git
-          echo "=== remotes ==="
-          conan remote list
-
-      - name: Resolve dependency graph (recipes only, no build)
-        run: |
-          set -o pipefail
-          conan graph info . --filter=ref 2>&1 | tee graph.txt
-          echo "=== RESOLVE OK ==="
+          echo "=== cura_inst top level ==="
+          ls -la cura_inst || true
+          echo "=== pyinstaller spec present? ==="
+          ls -la cura_inst/UltiMaker-Cura.spec || true
+          echo "=== packaging dir ==="
+          ls -la cura_inst/packaging || true
