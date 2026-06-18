@@ -52,6 +52,14 @@ jobs:
           package_overrides: ''
           profile: installer.jinja
 
+      - name: Generate source-tree files (CuraVersion.py)
+        # PyInstaller bundles `cura` from the workspace checkout, where CuraVersion.py
+        # is gitignored and absent (generate() during `conan create` only writes it
+        # into Conan's package copy). `conan install .` runs the recipe's generate()
+        # against the working tree, writing cura/CuraVersion.py here so the bundle
+        # includes it. Deploy is not invoked (no --deployer-package), so it's safe.
+        run: conan install . --build=missing --update --profile ${{ steps.set-overrides.outputs.profile }} ${{ env.CONAN_SENTRY_OPTS }}
+
       - name: Conan create (build + package PrintessFlow from local source)
         # Cura's deploy() needs a real package (package_folder + resdirs). `conan
         # install .` on the local recipe never packages cura, so package_folder is
