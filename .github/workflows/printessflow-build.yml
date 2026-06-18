@@ -13,15 +13,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history + tags; conanfile.py reads version via GitPython
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install Conan
+      - name: Install Conan and conanfile.py dependencies
         run: |
-          pip install "conan>=2.7,<3"
+          pip install "conan>=2.7,<3" gitpython requests pyyaml jinja2
           conan --version
 
       - name: Configure Conan (UltiMaker remotes, no login)
