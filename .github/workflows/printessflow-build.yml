@@ -279,19 +279,19 @@ jobs:
         run: |
           APP="dist/PrintessFlow.app"
           ENTITLEMENTS="packaging/MacOS/cura.entitlements"
-          # Sign every Mach-O binary from the inside out (dylibs, .so, executables)
+          # Sign every Mach-O binary from the inside out — no entitlements on inner files
           find "$APP" -type f | while read f; do
             if /usr/bin/file "$f" | grep -qE "Mach-O|bundle"; then
               codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
-                --entitlements "$ENTITLEMENTS" "$f" 2>/dev/null || true
+                "$f" 2>/dev/null || true
             fi
           done
           # Sign any embedded .framework bundles (directory-level, deepest first)
           find "$APP" -name "*.framework" -type d | sort -r | while read f; do
             codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
-              --entitlements "$ENTITLEMENTS" "$f" 2>/dev/null || true
+              "$f" 2>/dev/null || true
           done
-          # Sign the app bundle itself
+          # Sign the app bundle itself with entitlements
           codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
             --entitlements "$ENTITLEMENTS" "$APP"
           codesign --verify --deep --strict "$APP"
@@ -315,16 +315,15 @@ jobs:
           KEY_PATH="$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8"
           echo "$NOTARY_KEY_P8" | base64 --decode > "$KEY_PATH"
           NOTARY_ARGS=(--key "$KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --team-id "$APPLE_TEAM_ID")
-          SUBMIT_OUT=$(xcrun notarytool submit "PrintessFlow-macOS-arm64.dmg" \
-            "${NOTARY_ARGS[@]}" --wait --timeout 30m 2>&1) || true
-          echo "$SUBMIT_OUT"
-          SUBMISSION_ID=$(echo "$SUBMIT_OUT" | grep -E "^\s+id:" | head -1 | awk '{print $2}')
+          xcrun notarytool submit "PrintessFlow-macOS-arm64.dmg" \
+            "${NOTARY_ARGS[@]}" --wait --timeout 2h 2>&1 | tee /tmp/notary_out.txt || true
+          SUBMISSION_ID=$(grep -E "^\s+id:" /tmp/notary_out.txt | head -1 | awk '{print $2}')
           echo "Submission ID: $SUBMISSION_ID"
           if [ -n "$SUBMISSION_ID" ]; then
             echo "=== Apple Notarization Log ==="
             xcrun notarytool log "$SUBMISSION_ID" "${NOTARY_ARGS[@]}" 2>&1 || true
           fi
-          if echo "$SUBMIT_OUT" | grep -q "status: Accepted"; then
+          if grep -q "status: Accepted" /tmp/notary_out.txt; then
             xcrun stapler staple "PrintessFlow-macOS-arm64.dmg"
             echo "Notarization and stapling complete"
           else
