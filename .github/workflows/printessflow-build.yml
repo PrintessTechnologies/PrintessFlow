@@ -181,11 +181,7 @@ jobs:
           key: conan-windows-${{ hashFiles('conanfile.py', 'conandata.yml') }}
 
   build-macos:
-    # Apple Silicon (arm64) only. UNSIGNED validation pass: build the app + .dmg
-    # from local source to confirm packaging. Signing + notarization (secrets
-    # MAC_CERT_P12 / MAC_CERT_PASSWORD / APPLE_TEAM_ID / NOTARY_* are already in
-    # the repo) will be layered on once this packaging is confirmed working.
-    name: macOS installer (arm64, unsigned)
+    name: macOS installer (arm64)
     if: ${{ inputs.platform == 'both' || inputs.platform == 'macos' }}
     runs-on: macos-14
     env:
@@ -259,7 +255,45 @@ jobs:
             cp -f "resources/images/$img" "$IMGDIR/$img"
           done
 
-      - name: Build unsigned .dmg
+      - name: Import signing certificate
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$MAC_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -P "$MAC_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | xargs)
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep "Developer ID Application" | head -1 | awk -F'"' '{print $2}')
+          echo "SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+          echo "Found identity: $IDENTITY"
+
+      - name: Sign the .app bundle
+        run: |
+          APP="dist/PrintessFlow.app"
+          ENTITLEMENTS="packaging/MacOS/cura.entitlements"
+          # Sign dylibs and .so files from the inside out first
+          find "$APP" -type f \( -name "*.dylib" -o -name "*.so" \) | while read f; do
+            codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime "$f" 2>/dev/null || true
+          done
+          # Sign any embedded frameworks
+          find "$APP/Contents/Frameworks" -maxdepth 1 -mindepth 1 -name "*.framework" 2>/dev/null | while read f; do
+            codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime "$f" || true
+          done
+          # Sign the bundle itself with entitlements
+          codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
+            --entitlements "$ENTITLEMENTS" "$APP"
+          codesign --verify --deep --strict "$APP"
+          echo "Signed successfully"
+
+      - name: Build .dmg
         run: |
           mkdir -p dmg_stage
           cp -R "dist/PrintessFlow.app" dmg_stage/
@@ -267,7 +301,30 @@ jobs:
           hdiutil create -volname "PrintessFlow" -srcfolder dmg_stage -ov -format UDZO "PrintessFlow-macOS-arm64.dmg"
           hdiutil verify "PrintessFlow-macOS-arm64.dmg"
 
-      - name: Upload the installer (unsigned)
+      - name: Notarize and staple .dmg
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8"
+          echo "$NOTARY_KEY_P8" > "$KEY_PATH"
+          xcrun notarytool submit "PrintessFlow-macOS-arm64.dmg" \
+            --key "$KEY_PATH" \
+            --key-id "$NOTARY_KEY_ID" \
+            --issuer "$NOTARY_ISSUER_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait \
+            --timeout 30m
+          xcrun stapler staple "PrintessFlow-macOS-arm64.dmg"
+          echo "Notarization and stapling complete"
+
+      - name: Cleanup keychain
+        if: ${{ always() }}
+        run: security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true
+
+      - name: Upload the installer
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
