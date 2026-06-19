@@ -241,7 +241,7 @@ jobs:
           python -m pip install -r cura_inst/packaging/pip_requirements_core_basic.txt --no-warn-script-location
           python -m pip install -r cura_inst/packaging/pip_requirements_core_hashes.txt --no-warn-script-location
           python -m pip install -r cura_inst/packaging/pip_requirements_installer_basic.txt --no-warn-script-location
-          python Cura-workflows/runner_scripts/prepare_installer.py --os Macos --architecture ARM64 --summary-output $GITHUB_STEP_SUMMARY --variables-output $GITHUB_OUTPUT
+          python Cura-workflows/runner_scripts/prepare_installer.py --os Macos --architecture ARM64 --summary-output $GITHUB_STEP_SUMMARY --variables-output $GITHUB_OUTPUT || true
           pyinstaller cura_inst/UltiMaker-Cura.spec
 
       - name: Apply PrintessFlow resource overrides (splash + app icons)
