@@ -66,11 +66,12 @@ jobs:
       - name: Pin spdlog version (resolve upstream curaengine conflict)
         # curaengine upstream was updated to require spdlog/1.17.0 while other
         # packages still declare spdlog/1.15.1. Force the whole graph to 1.17.0
-        # via Conan's [replace_requires] mechanism so the resolve succeeds.
+        # by appending to the [replace_requires] section the action already created
+        # (adding the section header again causes a ConfigParser duplicate error).
         shell: pwsh
         run: |
           $profile = "$env:USERPROFILE\.conan2\profiles\${{ steps.set-overrides.outputs.profile }}"
-          Add-Content $profile "`n[replace_requires]`nspdlog/1.15.1: spdlog/1.17.0"
+          Add-Content $profile "spdlog/1.15.1: spdlog/1.17.0"
 
       - name: Generate source-tree files (CuraVersion.py)
         # PyInstaller bundles `cura` from the workspace checkout, where CuraVersion.py
@@ -224,7 +225,7 @@ jobs:
 
       - name: Pin spdlog version (resolve upstream curaengine conflict)
         run: |
-          printf '\n[replace_requires]\nspdlog/1.15.1: spdlog/1.17.0\n' >> ~/.conan2/profiles/${{ steps.set-overrides.outputs.profile }}
+          echo "spdlog/1.15.1: spdlog/1.17.0" >> ~/.conan2/profiles/${{ steps.set-overrides.outputs.profile }}
 
       - name: Generate source-tree files (CuraVersion.py)
         run: conan install . --build=missing --update --profile ${{ steps.set-overrides.outputs.profile }} ${{ env.CONAN_SENTRY_OPTS }}
