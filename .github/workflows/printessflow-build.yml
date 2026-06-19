@@ -309,7 +309,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           KEY_PATH="$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8"
-          echo "$NOTARY_KEY_P8" > "$KEY_PATH"
+          echo "$NOTARY_KEY_P8" | base64 --decode > "$KEY_PATH"
           xcrun notarytool submit "PrintessFlow-macOS-arm64.dmg" \
             --key "$KEY_PATH" \
             --key-id "$NOTARY_KEY_ID" \
