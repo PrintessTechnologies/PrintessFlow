@@ -189,6 +189,7 @@ jobs:
         -o curaengine/*:sentry_send_binaries=False
         -o curaengine/*:sentry_create_release=False
         -o arcus/*:sentry_send_binaries=False
+        -o clipper/*:sentry_send_binaries=False
         -o cura/*:display_name=PrintessFlow
     steps:
       - name: Set up build environment (UltiMaker action, anonymous Conan)
