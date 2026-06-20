@@ -305,14 +305,15 @@ jobs:
             "${NOTARY_ARGS[@]}" 2>&1 | tee /tmp/notary_submit.txt
           SUBMISSION_ID=$(grep -E "^\s+id:" /tmp/notary_submit.txt | head -1 | awk '{print $2}')
           echo "Submission ID: $SUBMISSION_ID"
-          echo "ZIP submitted to Apple. Run the printessflow-staple workflow once Apple accepts."
+          echo "ZIP submitted to Apple. Run the printessflow-staple workflow once Apple notifies you it is accepted."
 
-      - name: Upload .app for stapling
-        uses: actions/upload-artifact@v4
-        with:
-          name: PrintessFlow-macOS-app
-          path: dist/PrintessFlow.app
-          retention-days: 7
+      - name: Build .dmg
+        run: |
+          mkdir -p dmg_stage
+          cp -R "dist/PrintessFlow.app" dmg_stage/
+          ln -s /Applications dmg_stage/Applications
+          hdiutil create -volname "PrintessFlow" -srcfolder dmg_stage -ov -format UDZO "PrintessFlow-macOS-arm64.dmg"
+          hdiutil verify "PrintessFlow-macOS-arm64.dmg"
 
       - name: Cleanup keychain
         if: ${{ always() }}
@@ -323,7 +324,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: PrintessFlow-macOS-arm64
-          path: PrintessFlow-macOS-arm64.zip
+          path: PrintessFlow-macOS-arm64.dmg
           retention-days: 7
           if-no-files-found: warn
 

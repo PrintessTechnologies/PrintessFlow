@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       build_run_id:
-        description: 'GitHub Actions run ID of the build that produced the .app'
+        description: 'GitHub Actions run ID of the build that produced the DMG'
         required: true
         type: string
       release_tag:
@@ -18,7 +18,7 @@ on:
 
 jobs:
   staple:
-    name: Staple and publish .dmg
+    name: Staple and re-upload .dmg
     runs-on: macos-14
 
     steps:
@@ -47,40 +47,38 @@ jobs:
             fi
             exit 1
           fi
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
 
-      - name: Download .app from build artifact
+      - name: Download DMG from build artifact
         uses: actions/download-artifact@v4
         with:
-          name: PrintessFlow-macOS-app
+          name: PrintessFlow-macOS-arm64
           github-token: ${{ github.token }}
           run-id: ${{ inputs.build_run_id }}
-          path: dist
 
-      - name: Staple notarization ticket to .app
+      - name: Find DMG
         run: |
-          xcrun stapler staple "dist/PrintessFlow.app"
-          xcrun stapler validate "dist/PrintessFlow.app"
-          echo "Stapled successfully"
+          DMG=$(ls *.dmg | head -1)
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+          echo "Found: $DMG"
 
-      - name: Build .dmg from stapled .app
+      - name: Staple notarization ticket
         run: |
-          mkdir -p dmg_stage
-          cp -R "dist/PrintessFlow.app" dmg_stage/
-          ln -s /Applications dmg_stage/Applications
-          hdiutil create -volname "PrintessFlow" -srcfolder dmg_stage -ov -format UDZO "PrintessFlow-macOS-arm64.dmg"
-          hdiutil verify "PrintessFlow-macOS-arm64.dmg"
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          echo "Stapled successfully: $DMG"
 
-      - name: Publish .dmg to release
+      - name: Publish stapled DMG to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ inputs.release_tag }}" "PrintessFlow-macOS-arm64.dmg" \
+          gh release upload "${{ inputs.release_tag }}" "$DMG" \
             --repo "${{ github.repository }}" \
             --clobber
-          echo "Published to release ${{ inputs.release_tag }}"
+          echo "Published stapled DMG to release ${{ inputs.release_tag }}"
 
-      - name: Upload .dmg as artifact
+      - name: Upload stapled DMG as artifact
         uses: actions/upload-artifact@v4
         with:
           name: PrintessFlow-macOS-arm64-stapled
-          path: PrintessFlow-macOS-arm64.dmg
+          path: "*.dmg"
