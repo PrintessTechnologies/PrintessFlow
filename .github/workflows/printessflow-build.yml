@@ -289,16 +289,7 @@ jobs:
           codesign --verify --deep --strict "$APP"
           echo "Signed successfully"
 
-      - name: Build .dmg
-        run: |
-          mkdir -p dmg_stage
-          cp -R "dist/PrintessFlow.app" dmg_stage/
-          ln -s /Applications dmg_stage/Applications
-          hdiutil create -volname "PrintessFlow" -srcfolder dmg_stage -ov -format UDZO "PrintessFlow-macOS-arm64.dmg"
-          hdiutil verify "PrintessFlow-macOS-arm64.dmg"
-          codesign --force --sign "$SIGNING_IDENTITY" --timestamp "PrintessFlow-macOS-arm64.dmg"
-
-      - name: Notarize and staple .dmg
+      - name: Submit .app ZIP for notarization
         env:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
@@ -309,11 +300,20 @@ jobs:
           echo "$NOTARY_KEY_P8" | base64 --decode > "$KEY_PATH"
           NOTARY_ARGS=(--key "$KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --team-id "$APPLE_TEAM_ID")
 
-          xcrun notarytool submit "PrintessFlow-macOS-arm64.dmg" \
+          ditto -c -k --keepParent "dist/PrintessFlow.app" "PrintessFlow-macOS-arm64.zip"
+          xcrun notarytool submit "PrintessFlow-macOS-arm64.zip" \
             "${NOTARY_ARGS[@]}" 2>&1 | tee /tmp/notary_submit.txt
           SUBMISSION_ID=$(grep -E "^\s+id:" /tmp/notary_submit.txt | head -1 | awk '{print $2}')
           echo "Submission ID: $SUBMISSION_ID"
-          echo "DMG submitted to Apple. Run the printessflow-staple workflow once Apple notifies you it is accepted."
+          echo "ZIP submitted to Apple. Run the printessflow-staple workflow once Apple notifies you it is accepted."
+
+      - name: Build .dmg
+        run: |
+          mkdir -p dmg_stage
+          cp -R "dist/PrintessFlow.app" dmg_stage/
+          ln -s /Applications dmg_stage/Applications
+          hdiutil create -volname "PrintessFlow" -srcfolder dmg_stage -ov -format UDZO "PrintessFlow-macOS-arm64.dmg"
+          hdiutil verify "PrintessFlow-macOS-arm64.dmg"
 
       - name: Cleanup keychain
         if: ${{ always() }}
