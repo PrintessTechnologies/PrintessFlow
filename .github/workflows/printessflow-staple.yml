@@ -7,9 +7,13 @@ on:
         description: 'Apple notarization submission ID (from the build log)'
         required: true
         type: string
+      build_run_id:
+        description: 'GitHub Actions run ID of the build that produced the DMG'
+        required: true
+        type: string
       release_tag:
-        description: 'GitHub release tag to update (e.g. v5.14.0). Leave blank to skip release upload.'
-        required: false
+        description: 'GitHub release tag to publish to (e.g. v5.14.0)'
+        required: true
         type: string
 
 jobs:
@@ -45,17 +49,18 @@ jobs:
           fi
           echo "status=$STATUS" >> "$GITHUB_OUTPUT"
 
-      - name: Download DMG from latest release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Download DMG from build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: PrintessFlow-macOS-arm64
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.build_run_id }}
+
+      - name: Find DMG
         run: |
-          gh release download "${{ inputs.release_tag }}" \
-            --repo "${{ github.repository }}" \
-            --pattern "*.dmg" \
-            --dir .
           DMG=$(ls *.dmg | head -1)
           echo "DMG=$DMG" >> "$GITHUB_ENV"
-          echo "Downloaded: $DMG"
+          echo "Found: $DMG"
 
       - name: Staple notarization ticket
         run: |
@@ -63,15 +68,14 @@ jobs:
           xcrun stapler validate "$DMG"
           echo "Stapled successfully: $DMG"
 
-      - name: Re-upload stapled DMG to release
-        if: ${{ inputs.release_tag != '' }}
+      - name: Publish stapled DMG to release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ inputs.release_tag }}" "$DMG" \
             --repo "${{ github.repository }}" \
             --clobber
-          echo "Uploaded stapled DMG to release ${{ inputs.release_tag }}"
+          echo "Published stapled DMG to release ${{ inputs.release_tag }}"
 
       - name: Upload stapled DMG as artifact
         uses: actions/upload-artifact@v4

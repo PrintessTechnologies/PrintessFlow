@@ -322,36 +322,11 @@ jobs:
           echo "$NOTARY_KEY_P8" | base64 --decode > "$KEY_PATH"
           NOTARY_ARGS=(--key "$KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --team-id "$APPLE_TEAM_ID")
 
-          # Submit without --wait so CI is not blocked by Apple's processing time
           xcrun notarytool submit "PrintessFlow-macOS-arm64.dmg" \
             "${NOTARY_ARGS[@]}" 2>&1 | tee /tmp/notary_submit.txt
           SUBMISSION_ID=$(grep -E "^\s+id:" /tmp/notary_submit.txt | head -1 | awk '{print $2}')
           echo "Submission ID: $SUBMISSION_ID"
-
-          # Poll for up to 15 minutes (Apple usually responds in 2-5 min when healthy)
-          STATUS="In Progress"
-          for i in $(seq 1 9); do
-            sleep 100
-            echo "Checking status (attempt $i)..."
-            xcrun notarytool info "$SUBMISSION_ID" "${NOTARY_ARGS[@]}" 2>&1 | tee /tmp/notary_status.txt || true
-            STATUS=$(grep "status:" /tmp/notary_status.txt | head -1 | awk '{print $2}')
-            echo "Status: $STATUS"
-            if [ "$STATUS" = "Accepted" ] || [ "$STATUS" = "Invalid" ]; then
-              break
-            fi
-          done
-
-          if [ "$STATUS" = "Accepted" ]; then
-            xcrun stapler staple "PrintessFlow-macOS-arm64.dmg"
-            echo "Notarization and stapling complete"
-          elif [ "$STATUS" = "Invalid" ]; then
-            echo "=== Apple Notarization Log ==="
-            xcrun notarytool log "$SUBMISSION_ID" "${NOTARY_ARGS[@]}" 2>&1 || true
-            exit 1
-          else
-            echo "Apple still processing after 15 min (submission: $SUBMISSION_ID)"
-            echo "DMG will be uploaded unstapled — macOS verifies notarization online"
-          fi
+          echo "DMG submitted to Apple. Run the printessflow-staple workflow once Apple notifies you it is accepted."
 
       - name: Cleanup keychain
         if: ${{ always() }}
