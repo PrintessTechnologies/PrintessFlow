@@ -284,21 +284,8 @@ jobs:
         run: |
           APP="dist/PrintessFlow.app"
           ENTITLEMENTS="packaging/MacOS/cura.entitlements"
-          # Sign every Mach-O binary from the inside out — no entitlements on inner files
-          find "$APP" -type f | while read f; do
-            if /usr/bin/file "$f" | grep -qE "Mach-O|bundle"; then
-              codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
-                "$f" 2>/dev/null || true
-            fi
-          done
-          # Sign any embedded .framework bundles (directory-level, deepest first)
-          find "$APP" -name "*.framework" -type d | sort -r | while read f; do
-            codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
-              "$f" 2>/dev/null || true
-          done
-          # Sign the app bundle itself with entitlements
           codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
-            --entitlements "$ENTITLEMENTS" "$APP"
+            --entitlements "$ENTITLEMENTS" --deep "$APP"
           codesign --verify --deep --strict "$APP"
           echo "Signed successfully"
 
