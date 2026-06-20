@@ -1,0 +1,80 @@
+name: PrintessFlow Staple Notarization
+
+on:
+  workflow_dispatch:
+    inputs:
+      submission_id:
+        description: 'Apple notarization submission ID (from the build log)'
+        required: true
+        type: string
+      release_tag:
+        description: 'GitHub release tag to update (e.g. v5.14.0). Leave blank to skip release upload.'
+        required: false
+        type: string
+
+jobs:
+  staple:
+    name: Staple and re-upload .dmg
+    runs-on: macos-14
+
+    steps:
+      - name: Check submission status
+        id: check-status
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${NOTARY_KEY_ID}.p8"
+          echo "$NOTARY_KEY_P8" | base64 --decode > "$KEY_PATH"
+          NOTARY_ARGS=(--key "$KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --team-id "$APPLE_TEAM_ID")
+
+          echo "Checking status of submission: ${{ inputs.submission_id }}"
+          xcrun notarytool info "${{ inputs.submission_id }}" "${NOTARY_ARGS[@]}" 2>&1 | tee /tmp/notary_status.txt
+          STATUS=$(grep "status:" /tmp/notary_status.txt | head -1 | awk '{print $2}')
+          echo "Status: $STATUS"
+
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "Submission is not Accepted (status: $STATUS) — cannot staple yet"
+            if [ "$STATUS" = "Invalid" ]; then
+              echo "=== Apple Rejection Log ==="
+              xcrun notarytool log "${{ inputs.submission_id }}" "${NOTARY_ARGS[@]}" 2>&1 || true
+            fi
+            exit 1
+          fi
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+
+      - name: Download DMG from latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ inputs.release_tag }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "*.dmg" \
+            --dir .
+          DMG=$(ls *.dmg | head -1)
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+          echo "Downloaded: $DMG"
+
+      - name: Staple notarization ticket
+        run: |
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          echo "Stapled successfully: $DMG"
+
+      - name: Re-upload stapled DMG to release
+        if: ${{ inputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ inputs.release_tag }}" "$DMG" \
+            --repo "${{ github.repository }}" \
+            --clobber
+          echo "Uploaded stapled DMG to release ${{ inputs.release_tag }}"
+
+      - name: Upload stapled DMG as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrintessFlow-macOS-arm64-stapled
+          path: "*.dmg"
