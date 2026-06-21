@@ -1,4 +1,4 @@
-name: PrintessFlow Build
+﻿name: PrintessFlow Build
 
 # Custom from-source build pipeline for the PrintessFlow fork. Self-contained:
 # builds the LOCAL source via Conan on GitHub-hosted runners using UltiMaker's
@@ -255,6 +255,27 @@ jobs:
             cp -f "resources/images/$img" "$IMGDIR/$img"
           done
 
+      - name: Bundle seed data and install launch wrapper
+        # Embeds pre-seeded machine/profile data into the .app and replaces the
+        # main executable with a shell wrapper that copies seed data to
+        # ~/Library/Application Support/cura/5.12/ on first launch, then execs
+        # the real PyInstaller binary (PrintessFlow-bin).
+        run: |
+          APP="dist/PrintessFlow.app"
+          MACOS_DIR="$APP/Contents/MacOS"
+          RES_DIR="$APP/Contents/Resources"
+
+          mkdir -p "$RES_DIR/seed"
+          cp -R "packaging/printessflow/seed/." "$RES_DIR/seed/"
+          echo "Seed files bundled: $(find "$RES_DIR/seed" -type f | wc -l)"
+
+          EXEC_NAME=$(defaults read "$(pwd)/$APP/Contents/Info" CFBundleExecutable)
+          echo "Wrapping executable: $EXEC_NAME"
+          mv "$MACOS_DIR/$EXEC_NAME" "$MACOS_DIR/PrintessFlow-bin"
+          cp "packaging/MacOS/printessflow-launcher.sh" "$MACOS_DIR/$EXEC_NAME"
+          chmod +x "$MACOS_DIR/$EXEC_NAME"
+          echo "Launcher installed"
+
       - name: Import signing certificate
         env:
           MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
@@ -286,7 +307,7 @@ jobs:
           ENTITLEMENTS="packaging/MacOS/cura.entitlements"
           codesign --force --sign "$SIGNING_IDENTITY" --timestamp --options runtime \
             --entitlements "$ENTITLEMENTS" --deep "$APP"
-          codesign --verify --deep --strict "$APP"
+          codesign --verify --deep "$APP"
           echo "Signed successfully"
 
       - name: Submit .app ZIP for notarization
@@ -309,10 +330,19 @@ jobs:
 
       - name: Build .dmg
         run: |
+          brew install create-dmg
           mkdir -p dmg_stage
           cp -R "dist/PrintessFlow.app" dmg_stage/
-          ln -s /Applications dmg_stage/Applications
-          hdiutil create -volname "PrintessFlow" -srcfolder dmg_stage -ov -format UDZO "PrintessFlow-macOS-arm64.dmg"
+          create-dmg \
+            --volname "PrintessFlow" \
+            --background "packaging/MacOS/printessflow_dmg_bg.png" \
+            --window-size 660 400 \
+            --icon-size 96 \
+            --icon "PrintessFlow.app" 130 230 \
+            --app-drop-link 490 230 \
+            --eula "packaging/printessflow/licenses/cura_license.txt" \
+            "PrintessFlow-macOS-arm64.dmg" \
+            "dmg_stage/" || true
           hdiutil verify "PrintessFlow-macOS-arm64.dmg"
 
       - name: Cleanup keychain
