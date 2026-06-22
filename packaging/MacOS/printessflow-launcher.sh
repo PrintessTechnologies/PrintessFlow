@@ -1,17 +1,24 @@
 #!/bin/bash
 # First-run seeder for PrintessFlow.
-# Copies bundled machine/profile seed data to Cura's user data directory on
-# first launch, skipped on subsequent launches, then hands off to the real binary.
+#
+# Seeds the Printessa machine + dispense-tip profiles into Cura's user data
+# directory if they are not already present, then hands off to the real binary.
+# Keying on the machine file (not just cura.cfg) means it also seeds correctly
+# for users who already have a stock UltiMaker Cura 5.12 config in the same
+# folder, where the old "cura.cfg missing" check would have skipped seeding.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SEED_DIR="$SCRIPT_DIR/../Resources/seed/cura/5.12"
 DATA_DIR="$HOME/Library/Application Support/cura/5.12"
+MACHINE="$DATA_DIR/machine_instances/Printess+V1+Series.global.cfg"
 
-if [ ! -f "$DATA_DIR/cura.cfg" ]; then
+if [ ! -f "$MACHINE" ]; then
   mkdir -p "$DATA_DIR"
   if [ -d "$SEED_DIR" ]; then
     cp -R "$SEED_DIR/." "$DATA_DIR/"
   fi
-  cat > "$DATA_DIR/cura.cfg" << 'CFG'
+  if [ ! -f "$DATA_DIR/cura.cfg" ]; then
+    # Fresh install: write the preconfigured preferences.
+    cat > "$DATA_DIR/cura.cfg" << 'CFG'
 [general]
 last_run_version = 5.12.0
 accepted_user_agreement = True
@@ -32,6 +39,14 @@ expanded_brands = ;Printess
 [info]
 latest_update_version_shown = 99.99.99
 CFG
+  else
+    # Existing config (e.g. stock Cura already installed): activate the Printessa
+    # machine + our visibility preset in place, leaving other preferences intact.
+    /usr/bin/sed -i '' \
+      -e 's/^active_machine = .*/active_machine = Printess V1 Series/' \
+      -e 's/^active_setting_visibility_preset = .*/active_setting_visibility_preset = printess_v1.0/' \
+      "$DATA_DIR/cura.cfg"
+  fi
 fi
 
 exec "$SCRIPT_DIR/PrintessFlow-bin" "$@"
