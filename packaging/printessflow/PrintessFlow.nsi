@@ -1,7 +1,7 @@
 ; PrintessFlow Installer  -  Printess Technologies
 ; Packages the CI-built Cura app payload (staged into .\app) together with a
 ; pre-seeded machine/profile configuration (.\seed) and licenses, and launches
-; with APPDATA redirected to the install-local data folder.
+; seeding the machine/profile config into %APPDATA%\cura\5.12 on first install.
 
 !define APP_NAME     "PrintessFlow"
 !define APP_VERSION  "5.12.0"
@@ -68,16 +68,20 @@ Section "PrintessFlow" SEC_MAIN
     IfFileExists "$INSTDIR\${SRC_EXE}" 0 +2
         Rename "$INSTDIR\${SRC_EXE}" "$INSTDIR\${MAIN_EXE}"
 
-    ; --- Pre-seeded user data (machine config + dispense-tip profiles) ---
-    SetOutPath "$INSTDIR\data"
-    File /r "seed\*"
+    ; --- Pre-seeded user data into the real %APPDATA%\cura\5.12, but only when the
+    ;     Printessa machine isn't already there. Using the real APPDATA (instead of
+    ;     an install-local folder + a launch-time redirect) means the app is
+    ;     configured no matter how it is started (shortcut, pinned exe, or run
+    ;     directly), and a reinstall won't clobber an existing config. ---
+    IfFileExists "$APPDATA\cura\5.12\machine_instances\Printess+V1+Series.global.cfg" seed_skip 0
+    SetOutPath "$APPDATA\cura\5.12"
+    File /r "seed\cura\5.12\*"
 
     ; --- Initial preferences, only on a fresh install (skips the welcome flow
-    ;     and activates the Printess machine). Seeded as 5.12 so Cura 5.14
-    ;     migrates it through its normal version-upgrade path on first launch. ---
-    IfFileExists "$INSTDIR\${DATA_SUBPATH}\cura.cfg" cfg_exists cfg_missing
+    ;     and activates the Printess machine). ---
+    IfFileExists "$APPDATA\cura\5.12\cura.cfg" cfg_exists cfg_missing
     cfg_missing:
-        FileOpen  $0 "$INSTDIR\${DATA_SUBPATH}\cura.cfg" w
+        FileOpen  $0 "$APPDATA\cura\5.12\cura.cfg" w
         FileWrite $0 "[general]$\r$\n"
         FileWrite $0 "last_run_version = 5.12.0$\r$\n"
         FileWrite $0 "accepted_user_agreement = True$\r$\n"
@@ -99,22 +103,15 @@ Section "PrintessFlow" SEC_MAIN
         FileWrite $0 "latest_update_version_shown = 99.99.99$\r$\n"
         FileClose $0
     cfg_exists:
+    seed_skip:
 
     ; --- License files (LGPL/AGPL/Qt/third-party + attribution) ---
     SetOutPath "$INSTDIR\licenses"
     File /r "licenses\*"
 
-    ; --- Shortcuts: launch via cmd so APPDATA points at the install-local data,
-    ;     keeping PrintessFlow isolated from any other Cura install. ---
-    CreateShortcut "$DESKTOP\${APP_NAME}.lnk" \
-        "$WINDIR\system32\cmd.exe" \
-        '/c set "APPDATA=$INSTDIR\data"& start "" "$INSTDIR\${MAIN_EXE}"' \
-        "$INSTDIR\${MAIN_EXE}" 0 SW_SHOWMINIMIZED
-
-    CreateShortcut "$SMPROGRAMS\${APP_NAME}.lnk" \
-        "$WINDIR\system32\cmd.exe" \
-        '/c set "APPDATA=$INSTDIR\data"& start "" "$INSTDIR\${MAIN_EXE}"' \
-        "$INSTDIR\${MAIN_EXE}" 0 SW_SHOWMINIMIZED
+    ; --- Shortcuts: launch the app directly (config lives in %APPDATA%). ---
+    CreateShortcut "$DESKTOP\${APP_NAME}.lnk" "$INSTDIR\${MAIN_EXE}" "" "$INSTDIR\${MAIN_EXE}" 0
+    CreateShortcut "$SMPROGRAMS\${APP_NAME}.lnk" "$INSTDIR\${MAIN_EXE}" "" "$INSTDIR\${MAIN_EXE}" 0
 
     ; --- Add/Remove Programs registry entries ---
     WriteRegStr   HKCU "Software\${APP_NAME}" "InstallDir" "$INSTDIR"
@@ -131,7 +128,7 @@ Section "PrintessFlow" SEC_MAIN
 SectionEnd
 
 Function LaunchApp
-    Exec '"$WINDIR\system32\cmd.exe" /c set "APPDATA=$INSTDIR\data"& start "" "$INSTDIR\${MAIN_EXE}"'
+    Exec '"$INSTDIR\${MAIN_EXE}"'
 FunctionEnd
 
 Section "Uninstall"
