@@ -1,0 +1,66 @@
+name: PrintessFlow Gatekeeper Check
+
+# Diagnostic: downloads the published dmg from a release, mounts it, and runs
+# the same checks Gatekeeper does at launch (spctl assessment, codesign verify,
+# staple validation) so we can see exactly why a notarized app might still be
+# rejected. Read-only; publishes nothing.
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag whose dmg to inspect'
+        required: true
+        type: string
+        default: v5.12.0
+
+jobs:
+  check:
+    name: Inspect published dmg
+    runs-on: macos-14
+    steps:
+      - name: Download dmg from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ inputs.release_tag }}" \
+            --repo "${{ github.repository }}" -p '*.dmg' --clobber
+          ls -la *.dmg
+
+      - name: Mount and assess
+        run: |
+          DMG=$(ls *.dmg | head -1)
+          echo "############ DMG: $DMG ############"
+          echo "=== stapler validate (dmg) ==="
+          xcrun stapler validate "$DMG" 2>&1 || echo "(dmg staple validate FAILED)"
+
+          yes | hdiutil attach "$DMG" -nobrowse -noverify -noautoopen
+          VOL=$(ls -d /Volumes/*[Pp]rintess* 2>/dev/null | head -1)
+          APP=$(ls -d "$VOL"/*.app | head -1)
+          echo "Mounted: $VOL"
+          echo "App: $APP"
+
+          echo ""
+          echo "=== main executable ==="
+          EXEC=$(defaults read "$APP/Contents/Info" CFBundleExecutable)
+          echo "CFBundleExecutable = $EXEC"
+          file "$APP/Contents/MacOS/$EXEC"
+          echo "xattrs on main executable:"
+          xattr -l "$APP/Contents/MacOS/$EXEC" 2>&1 || true
+
+          echo ""
+          echo "=== codesign -dv (app) ==="
+          codesign -dv --verbose=4 "$APP" 2>&1 || true
+
+          echo ""
+          echo "=== codesign --verify --deep --strict (app) ==="
+          codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 || echo "(codesign verify FAILED)"
+
+          echo ""
+          echo "=== stapler validate (app) ==="
+          xcrun stapler validate "$APP" 2>&1 || echo "(app staple validate FAILED)"
+
+          echo ""
+          echo "=== spctl assessment (exec) ==="
+          spctl -a -t exec -vvv "$APP" 2>&1 || echo "(spctl exec assessment REJECTED)"
+
+          hdiutil detach "$VOL" || true
