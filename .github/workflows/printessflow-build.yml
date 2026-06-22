@@ -61,6 +61,19 @@ jobs:
           New-Item -ItemType Directory -Force -Path $app | Out-Null
           Copy-Item -Recurse -Force C:\stock\* "$app/"
 
+      - name: Embed PrintessFlow icon into the app exe
+        shell: pwsh
+        # The app exe keeps UltiMaker's embedded icon after the stock install; the
+        # NSIS rename to PrintessFlow.exe carries the icon along, so re-embed our
+        # icon here (rcedit). Affects the Start menu / taskbar / Explorer icon.
+        run: |
+          choco install rcedit -y --no-progress | Out-Null
+          $rcedit = (Get-Command rcedit -ErrorAction SilentlyContinue).Source
+          if (-not $rcedit) { $rcedit = "C:\ProgramData\chocolatey\bin\rcedit.exe" }
+          & $rcedit "packaging/printessflow/app/UltiMaker-Cura.exe" --set-icon "packaging/printessflow/PrintessFlow.ico"
+          if ($LASTEXITCODE -ne 0) { throw "rcedit failed: $LASTEXITCODE" }
+          Write-Host "exe icon embedded"
+
       - name: Install NSIS
         shell: pwsh
         run: choco install nsis -y --no-progress
