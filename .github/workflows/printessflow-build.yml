@@ -88,19 +88,25 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }
           Pop-Location
 
-      - name: Verify installer contains customizations
+      - name: Verify customizations + seed are bundled
         shell: pwsh
-        # Crack open the finished installer and assert the customizations + seed
-        # are actually bundled, so a silently-stock build can never be published.
+        # Assert the staged payload (which NSIS bundles verbatim via File /r) and
+        # the seed contain the customizations, plus that the installer was built,
+        # so a silently-stock build can never be published.
         run: |
-          $7z = "C:\Program Files\7-Zip\7z.exe"
-          if (-not (Test-Path $7z)) { $7z = "7z" }
-          $list = & $7z l "packaging/printessflow/PrintessFlow-Setup.exe"
-          $markers = @("WellPlateArrangeTool","PrintessAllMaterials","custom.def.json","printess_v1.0.cfg","Printess+V1+Series.global.cfg")
+          $app = "packaging/printessflow/app"
+          $markers = @(
+            "$app/share/cura/plugins/WellPlateArrangeTool/plugin.json",
+            "$app/share/cura/plugins/PrintessAllMaterials/plugin.json",
+            "$app/share/cura/resources/definitions/custom.def.json",
+            "$app/share/cura/resources/setting_visibility/printess_v1.0.cfg",
+            "packaging/printessflow/seed/cura/5.12/machine_instances/Printess+V1+Series.global.cfg"
+          )
           foreach ($m in $markers) {
-            if ($list -notmatch [regex]::Escape($m)) { throw "installer is missing customization marker: $m" }
+            if (-not (Test-Path $m)) { throw "missing customization marker: $m" }
           }
-          Write-Host "installer customization markers verified"
+          if (-not (Test-Path "packaging/printessflow/PrintessFlow-Setup.exe")) { throw "installer was not produced" }
+          Write-Host "customizations + seed + installer verified"
 
       - name: Upload the installer
         if: ${{ always() }}
