@@ -11,7 +11,7 @@ on:
         description: 'Release tag whose dmg to inspect'
         required: true
         type: string
-        default: v5.12.0
+        default: v1.0
 
 jobs:
   check:
