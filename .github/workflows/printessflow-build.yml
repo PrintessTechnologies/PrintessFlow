@@ -88,6 +88,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "makensis failed with exit code $LASTEXITCODE" }
           Pop-Location
 
+      - name: Verify installer contains customizations
+        shell: pwsh
+        # Crack open the finished installer and assert the customizations + seed
+        # are actually bundled, so a silently-stock build can never be published.
+        run: |
+          $7z = "C:\Program Files\7-Zip\7z.exe"
+          if (-not (Test-Path $7z)) { $7z = "7z" }
+          $list = & $7z l "packaging/printessflow/PrintessFlow-Setup.exe"
+          $markers = @("WellPlateArrangeTool","PrintessAllMaterials","custom.def.json","printess_v1.0.cfg","Printess+V1+Series.global.cfg")
+          foreach ($m in $markers) {
+            if ($list -notmatch [regex]::Escape($m)) { throw "installer is missing customization marker: $m" }
+          }
+          Write-Host "installer customization markers verified"
+
       - name: Upload the installer
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -142,6 +156,23 @@ jobs:
           cp "packaging/MacOS/printessflow-launcher.sh" "$MACOS_DIR/$EXEC_NAME"
           chmod +x "$MACOS_DIR/$EXEC_NAME"
           echo "Launcher installed"
+
+      - name: Verify customizations landed
+        # Assert seed, launcher, and custom plugins are present in the .app before
+        # it is signed and packaged, so a silently-stock build can never ship.
+        run: |
+          APP="PrintessFlow.app"
+          fail=0
+          check() { if [ ! -e "$1" ]; then echo "MISSING: $1"; fail=1; fi; }
+          check "$APP/Contents/Resources/seed/cura/5.12/machine_instances/Printess+V1+Series.global.cfg"
+          check "$APP/Contents/MacOS/PrintessFlow-bin"
+          check "$APP/Contents/Resources/share/cura/plugins/WellPlateArrangeTool/plugin.json"
+          check "$APP/Contents/Resources/share/cura/plugins/PrintessAllMaterials/plugin.json"
+          check "$APP/Contents/Resources/share/cura/resources/setting_visibility/printess_v1.0.cfg"
+          EXEC_NAME=$(defaults read "$(pwd)/$APP/Contents/Info" CFBundleExecutable)
+          head -1 "$APP/Contents/MacOS/$EXEC_NAME" | grep -q '^#!/bin/bash' || { echo "launcher not installed as CFBundleExecutable"; fail=1; }
+          [ $fail -eq 0 ] || { echo "customization verification FAILED"; exit 1; }
+          echo "customizations verified"
 
       - name: Brand the app (icon + name)
         # Replace the stock UltiMaker icns with a PrintessFlow icns generated from
