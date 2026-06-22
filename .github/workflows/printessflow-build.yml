@@ -106,6 +106,9 @@ jobs:
         # invalidates the signature) and before NSIS bundles the payload.
         uses: azure/trusted-signing-action@v0.5.1
         with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
           endpoint: ${{ secrets.AZURE_CODESIGN_ENDPOINT }}
           trusted-signing-account-name: ${{ secrets.AZURE_CODESIGN_ACCOUNT }}
           certificate-profile-name: ${{ secrets.AZURE_CODESIGN_PROFILE }}
@@ -176,6 +179,9 @@ jobs:
         # device, path, or file" block.
         uses: azure/trusted-signing-action@v0.5.1
         with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
           endpoint: ${{ secrets.AZURE_CODESIGN_ENDPOINT }}
           trusted-signing-account-name: ${{ secrets.AZURE_CODESIGN_ACCOUNT }}
           certificate-profile-name: ${{ secrets.AZURE_CODESIGN_PROFILE }}
