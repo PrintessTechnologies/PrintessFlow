@@ -63,16 +63,31 @@ jobs:
 
       - name: Embed PrintessFlow icon into the app exe
         shell: pwsh
-        # The app exe keeps UltiMaker's embedded icon after the stock install; the
-        # NSIS rename to PrintessFlow.exe carries the icon along, so re-embed our
-        # icon here (rcedit). Affects the Start menu / taskbar / Explorer icon.
+        # PyInstaller appends its package archive as a PE overlay; resource editors
+        # like rcedit corrupt it ("Could not load pyinstaller's embedded pkg archive
+        # from the executable"). UpdateExeIcon.ps1 saves the overlay, updates the
+        # icon via the Windows resource API (which truncates it), then re-appends
+        # the overlay byte-for-byte.
         run: |
-          choco install rcedit -y --no-progress | Out-Null
-          $rcedit = (Get-Command rcedit -ErrorAction SilentlyContinue).Source
-          if (-not $rcedit) { $rcedit = "C:\ProgramData\chocolatey\bin\rcedit.exe" }
-          & $rcedit "packaging/printessflow/app/UltiMaker-Cura.exe" --set-icon "packaging/printessflow/PrintessFlow.ico"
-          if ($LASTEXITCODE -ne 0) { throw "rcedit failed: $LASTEXITCODE" }
+          & ".\packaging\printessflow\UpdateExeIcon.ps1" -ExePath "packaging/printessflow/app/UltiMaker-Cura.exe" -IcoPath "packaging/printessflow/PrintessFlow.ico"
           Write-Host "exe icon embedded"
+
+      - name: Verify PyInstaller archive survived the icon edit
+        shell: pwsh
+        # Guard against shipping a corrupted exe: the PyInstaller cookie magic must
+        # still be present near the end of the file after the icon update.
+        run: |
+          $b = [System.IO.File]::ReadAllBytes("packaging/printessflow/app/UltiMaker-Cura.exe")
+          $magic = [byte[]](0x4D,0x45,0x49,0x0C,0x0B,0x0A,0x0B,0x0E)  # "MEI" + PyInstaller bytes
+          $start = [Math]::Max(0, $b.Length - 262144)
+          $found = $false
+          for ($i = $b.Length - $magic.Length; $i -ge $start; $i--) {
+            $ok = $true
+            for ($j = 0; $j -lt $magic.Length; $j++) { if ($b[$i+$j] -ne $magic[$j]) { $ok = $false; break } }
+            if ($ok) { $found = $true; break }
+          }
+          if (-not $found) { throw "PyInstaller archive cookie missing - the icon edit corrupted the exe overlay" }
+          Write-Host "PyInstaller archive intact"
 
       - name: Install NSIS
         shell: pwsh
