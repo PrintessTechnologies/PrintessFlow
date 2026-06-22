@@ -20,18 +20,10 @@ Item
     readonly property real ctrlW:    UM.Theme.getSize("setting_control").width
     readonly property real presetBW: Math.floor((panelW - halfGap * 2) / 3)
 
-    // Which preset is currently active ("Custom" when none of the standard presets match)
-    readonly property string activePreset:
-    {
-        if (!wellPlateManager) return "Custom"
-        var r = wellPlateManager.rows, c = wellPlateManager.cols
-        var sx = wellPlateManager.spacingX, sy = wellPlateManager.spacingY
-        if (r===2  && c===3  && Math.abs(sx-39.12)<0.01 && Math.abs(sy-39.12)<0.01) return "6-Well"
-        if (r===3  && c===4  && Math.abs(sx-26.01)<0.01 && Math.abs(sy-26.01)<0.01) return "12-Well"
-        if (r===4  && c===6  && Math.abs(sx-19.30)<0.01 && Math.abs(sy-19.30)<0.01) return "24-Well"
-        if (r===6  && c===8  && Math.abs(sx-13.08)<0.01 && Math.abs(sy-13.08)<0.01) return "48-Well"
-        return "Custom"
-    }
+    // Which entry is selected ("6-Well" .. "48-Well" or "Custom"). Authoritative
+    // value comes from Python so editing a field switches cleanly to Custom
+    // without ever appearing to mutate a preset.
+    readonly property string activePreset: wellPlateManager ? wellPlateManager.activePreset : "Custom"
 
     // ── Button ─────────────────────────────────────────────────────────────────
     Rectangle
@@ -183,6 +175,8 @@ Item
                     {
                         id: rowsField
                         width: base.ctrlW; height: base.ctrlH
+                        // Preset grids are fixed; only Custom is editable.
+                        enabled: base.activePreset === "Custom"
                         unit: ""
                         validator: IntValidator { bottom: 1; top: 999 }
                         onEditingFinished:
@@ -197,6 +191,7 @@ Item
                     {
                         id: colsField
                         width: base.ctrlW; height: base.ctrlH
+                        enabled: base.activePreset === "Custom"
                         unit: ""
                         validator: IntValidator { bottom: 1; top: 999 }
                         onEditingFinished:
@@ -211,6 +206,7 @@ Item
                     {
                         id: spacingXField
                         width: base.ctrlW; height: base.ctrlH
+                        enabled: base.activePreset === "Custom"
                         unit: "mm"
                         validator: UM.FloatValidator { maxBeforeDecimal: 5; maxAfterDecimal: 2 }
                         onEditingFinished:
@@ -225,6 +221,7 @@ Item
                     {
                         id: spacingYField
                         width: base.ctrlW; height: base.ctrlH
+                        enabled: base.activePreset === "Custom"
                         unit: "mm"
                         validator: UM.FloatValidator { maxBeforeDecimal: 5; maxAfterDecimal: 2 }
                         onEditingFinished:
@@ -298,7 +295,7 @@ Item
 
         Button
         {
-            // Clicking "Custom" is a no-op — it is a read-only indicator
+            // "Custom" is selectable: clicking it restores the saved Custom grid.
             property bool sel: base.activePreset === modelData
 
             implicitWidth:  base.presetBW
@@ -323,7 +320,7 @@ Item
                 radius: UM.Theme.getSize("default_radius").width
                 color: sel
                     ? UM.Theme.getColor("primary_button")
-                    : (parent.hovered && modelData !== "Custom"
+                    : (parent.hovered
                         ? UM.Theme.getColor("primary_button_hover")
                         : UM.Theme.getColor("main_background"))
                 border.color: sel
@@ -332,11 +329,7 @@ Item
                 border.width: UM.Theme.getSize("default_lining").width
             }
 
-            onClicked:
-            {
-                if (modelData !== "Custom")
-                    wellPlateManager.setPreset(modelData)
-            }
+            onClicked: wellPlateManager.setPreset(modelData)
         }
     }
 

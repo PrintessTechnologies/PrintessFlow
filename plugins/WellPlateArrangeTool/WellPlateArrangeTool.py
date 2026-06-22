@@ -31,6 +31,18 @@ _PREF_ORIGIN_Y   = "WellPlate/origin_y"
 _PREF_HAS_ORIGIN = "WellPlate/has_origin"
 _PREF_DEFAULTS_VERSION = "WellPlate/defaults_version"
 
+# Active selection ("6-Well" .. "48-Well" or "Custom") and the dedicated Custom
+# grid. Custom is stored independently of the presets so that editing a value
+# (which switches the selection to Custom) never appears to mutate a preset, and
+# so switching between a preset and Custom is non-destructive.
+_PREF_ACTIVE_PRESET   = "WellPlate/active_preset"
+_PREF_CUSTOM_ROWS     = "WellPlate/custom_rows"
+_PREF_CUSTOM_COLS     = "WellPlate/custom_cols"
+_PREF_CUSTOM_SPACING_X = "WellPlate/custom_spacing_x"
+_PREF_CUSTOM_SPACING_Y = "WellPlate/custom_spacing_y"
+
+_CUSTOM = "Custom"
+
 # Bump this whenever the in-code default grid changes and you want existing
 # installs (which have an older grid saved in preferences) to pick up the new
 # default once. Version 1 = default switched to the 6-Well preset.
@@ -39,16 +51,18 @@ _DEFAULTS_VERSION = 1
 
 class WellPlateArrange(QObject, Extension):
 
-    rowsChanged        = pyqtSignal()
-    colsChanged        = pyqtSignal()
-    spacingXChanged    = pyqtSignal()
-    spacingYChanged    = pyqtSignal()
-    objectCountChanged = pyqtSignal()
+    rowsChanged          = pyqtSignal()
+    colsChanged          = pyqtSignal()
+    spacingXChanged      = pyqtSignal()
+    spacingYChanged      = pyqtSignal()
+    objectCountChanged   = pyqtSignal()
+    activePresetChanged  = pyqtSignal()
 
     def __init__(self, parent=None):
         QObject.__init__(self, parent)
         Extension.__init__(self)
 
+        # Active grid (what Arrange uses). Defaults to the 6-Well preset.
         self._rows      = 2
         self._cols      = 3
         self._spacing_x = 39.12
@@ -56,6 +70,17 @@ class WellPlateArrange(QObject, Extension):
         self._origin_x  = 40.0     # bottom-left well centre, printer (corner) coords
         self._origin_y  = 23.0
         self._has_origin = True    # default matches the 6-Well preset
+
+        # Which entry is selected in the UI ("6-Well" .. "48-Well" or "Custom").
+        self._active_preset = "6-Well"
+
+        # Dedicated Custom grid, kept separate from the presets so editing never
+        # touches a preset. Seeded with a neutral generic plate.
+        self._custom_rows      = 8
+        self._custom_cols      = 12
+        self._custom_spacing_x = 9.0
+        self._custom_spacing_y = 9.0
+
         self._object_count = 0
         self._prefs_loaded = False
         self._view = None
@@ -121,6 +146,11 @@ class WellPlateArrange(QObject, Extension):
             prefs.addPreference(_PREF_ORIGIN_Y,   self._origin_y)
             prefs.addPreference(_PREF_HAS_ORIGIN, self._has_origin)
             prefs.addPreference(_PREF_DEFAULTS_VERSION, 0)
+            prefs.addPreference(_PREF_ACTIVE_PRESET,    self._active_preset)
+            prefs.addPreference(_PREF_CUSTOM_ROWS,      self._custom_rows)
+            prefs.addPreference(_PREF_CUSTOM_COLS,      self._custom_cols)
+            prefs.addPreference(_PREF_CUSTOM_SPACING_X, self._custom_spacing_x)
+            prefs.addPreference(_PREF_CUSTOM_SPACING_Y, self._custom_spacing_y)
 
             # One-time defaults migration: if this install predates the current
             # default grid, overwrite the saved grid with the in-code defaults
@@ -142,6 +172,14 @@ class WellPlateArrange(QObject, Extension):
             self._origin_x   = float(prefs.getValue(_PREF_ORIGIN_X))
             self._origin_y   = float(prefs.getValue(_PREF_ORIGIN_Y))
             self._has_origin = str(prefs.getValue(_PREF_HAS_ORIGIN)).lower() in ("true", "1")
+
+            self._custom_rows      = int(float(prefs.getValue(_PREF_CUSTOM_ROWS)))
+            self._custom_cols      = int(float(prefs.getValue(_PREF_CUSTOM_COLS)))
+            self._custom_spacing_x = float(prefs.getValue(_PREF_CUSTOM_SPACING_X))
+            self._custom_spacing_y = float(prefs.getValue(_PREF_CUSTOM_SPACING_Y))
+
+            active = str(prefs.getValue(_PREF_ACTIVE_PRESET))
+            self._active_preset = active if (active in _PRESETS or active == _CUSTOM) else _CUSTOM
         except Exception as e:
             Logger.logException("w", "WellPlateArrange: could not load preferences: %s", e)
 
@@ -155,6 +193,11 @@ class WellPlateArrange(QObject, Extension):
             prefs.setValue(_PREF_ORIGIN_X,   self._origin_x)
             prefs.setValue(_PREF_ORIGIN_Y,   self._origin_y)
             prefs.setValue(_PREF_HAS_ORIGIN, self._has_origin)
+            prefs.setValue(_PREF_ACTIVE_PRESET,    self._active_preset)
+            prefs.setValue(_PREF_CUSTOM_ROWS,      self._custom_rows)
+            prefs.setValue(_PREF_CUSTOM_COLS,      self._custom_cols)
+            prefs.setValue(_PREF_CUSTOM_SPACING_X, self._custom_spacing_x)
+            prefs.setValue(_PREF_CUSTOM_SPACING_Y, self._custom_spacing_y)
         except Exception as e:
             Logger.logException("w", "WellPlateArrange: could not save preferences: %s", e)
 
@@ -180,42 +223,77 @@ class WellPlateArrange(QObject, Extension):
     def objectCount(self):
         return self._object_count
 
+    @pyqtProperty(str, notify=activePresetChanged)
+    def activePreset(self):
+        return self._active_preset
+
+    # ── Custom-mode helper ───────────────────────────────────────────────────
+
+    def _enterCustom(self):
+        """Switch the active selection to Custom.
+
+        Editing any grid field puts the user in Custom mode. The first time we
+        leave a preset we seed the Custom grid from the values currently on
+        screen, so the fields the user did not touch keep sensible values. The
+        presets themselves are immutable code constants and are never modified.
+        """
+        if self._active_preset == _CUSTOM:
+            return
+        self._custom_rows      = self._rows
+        self._custom_cols      = self._cols
+        self._custom_spacing_x = self._spacing_x
+        self._custom_spacing_y = self._spacing_y
+        self._active_preset = _CUSTOM
+        self._has_origin = False   # Custom configs use the legacy bed-centred layout
+        self.activePresetChanged.emit()
+
     # ── Slots (called by QML via wellPlateManager.setRows(v) etc.) ──────────
 
     @pyqtSlot(int)
     def setRows(self, value):
         v = max(1, int(value))
+        self._enterCustom()
+        self._custom_rows = v
         if v != self._rows:
             self._rows = v
             self.rowsChanged.emit()
-            self._savePreferences()
+        self._savePreferences()
 
     @pyqtSlot(int)
     def setCols(self, value):
         v = max(1, int(value))
+        self._enterCustom()
+        self._custom_cols = v
         if v != self._cols:
             self._cols = v
             self.colsChanged.emit()
-            self._savePreferences()
+        self._savePreferences()
 
     @pyqtSlot(float)
     def setSpacingX(self, value):
         v = max(0.1, float(value))
+        self._enterCustom()
+        self._custom_spacing_x = v
         if abs(v - self._spacing_x) > 1e-6:
             self._spacing_x = v
             self.spacingXChanged.emit()
-            self._savePreferences()
+        self._savePreferences()
 
     @pyqtSlot(float)
     def setSpacingY(self, value):
         v = max(0.1, float(value))
+        self._enterCustom()
+        self._custom_spacing_y = v
         if abs(v - self._spacing_y) > 1e-6:
             self._spacing_y = v
             self.spacingYChanged.emit()
-            self._savePreferences()
+        self._savePreferences()
 
     @pyqtSlot(str)
     def setPreset(self, name):
+        if name == _CUSTOM:
+            self._loadCustom()
+            return
         if name not in _PRESETS:
             return
         p = _PRESETS[name]
@@ -230,10 +308,28 @@ class WellPlateArrange(QObject, Extension):
             self._has_origin = True
         else:
             self._has_origin = False
+        self._active_preset = name
         self.rowsChanged.emit()
         self.colsChanged.emit()
         self.spacingXChanged.emit()
         self.spacingYChanged.emit()
+        self.activePresetChanged.emit()
+        self._savePreferences()
+
+    def _loadCustom(self):
+        """Make the stored Custom grid the active grid."""
+        self._prefs_loaded = True
+        self._rows      = max(1, int(self._custom_rows))
+        self._cols      = max(1, int(self._custom_cols))
+        self._spacing_x = max(0.1, float(self._custom_spacing_x))
+        self._spacing_y = max(0.1, float(self._custom_spacing_y))
+        self._has_origin = False
+        self._active_preset = _CUSTOM
+        self.rowsChanged.emit()
+        self.colsChanged.emit()
+        self.spacingXChanged.emit()
+        self.spacingYChanged.emit()
+        self.activePresetChanged.emit()
         self._savePreferences()
 
     @pyqtSlot()
@@ -303,20 +399,15 @@ class WellPlateArrange(QObject, Extension):
     # ── Machine geometry helpers ───────────────────────────────────────────────
 
     def _resolveOrigin(self):
-        """Return (origin_x, origin_y, has_origin) for the CURRENT grid config.
+        """Return (origin_x, origin_y, has_origin) for the CURRENT selection.
 
-        The origin is derived from the live rows/cols/spacing by matching against
-        the measured presets, so it works whether the preset was clicked this
-        session or merely restored from preferences. Falls back to the stored
-        origin (and ultimately to "no origin" -> legacy centred layout).
+        A measured preset uses its calibrated bottom-left well origin. Custom
+        configs have no measured origin and fall back to the legacy bed-centred
+        layout, even if their grid numerically coincides with a preset.
         """
-        for p in _PRESETS.values():
-            if ("origin_x" in p
-                    and p["rows"] == self._rows
-                    and p["cols"] == self._cols
-                    and abs(p["spacing_x"] - self._spacing_x) < 0.01
-                    and abs(p["spacing_y"] - self._spacing_y) < 0.01):
-                return p["origin_x"], p["origin_y"], True
+        p = _PRESETS.get(self._active_preset)
+        if p is not None and "origin_x" in p and "origin_y" in p:
+            return p["origin_x"], p["origin_y"], True
         return self._origin_x, self._origin_y, self._has_origin
 
     def _machineGeometry(self):
