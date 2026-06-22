@@ -130,6 +130,27 @@ jobs:
           chmod +x "$MACOS_DIR/$EXEC_NAME"
           echo "Launcher installed"
 
+      - name: Brand the app (icon + name)
+        # Replace the stock UltiMaker icns with a PrintessFlow icns generated from
+        # the 2048px source, and set the bundle display name. Must run before signing.
+        run: |
+          APP="PrintessFlow.app"
+          SRC="packaging/MacOS/PrintessFlow.png"
+          mkdir -p PrintessFlow.iconset
+          for sz in 16 32 128 256 512; do
+            sips -z $sz $sz       "$SRC" --out "PrintessFlow.iconset/icon_${sz}x${sz}.png"     >/dev/null
+            sips -z $((sz*2)) $((sz*2)) "$SRC" --out "PrintessFlow.iconset/icon_${sz}x${sz}@2x.png" >/dev/null
+          done
+          iconutil -c icns PrintessFlow.iconset -o PrintessFlow.icns
+          ICON_FILE=$(defaults read "$(pwd)/$APP/Contents/Info" CFBundleIconFile 2>/dev/null || echo "")
+          case "$ICON_FILE" in "") ICON_FILE="cura.icns";; *.icns) ;; *) ICON_FILE="${ICON_FILE}.icns";; esac
+          echo "replacing bundle icon: $ICON_FILE"
+          cp PrintessFlow.icns "$APP/Contents/Resources/$ICON_FILE"
+          PB=/usr/libexec/PlistBuddy
+          $PB -c "Set :CFBundleName PrintessFlow" "$APP/Contents/Info.plist" 2>/dev/null || $PB -c "Add :CFBundleName string PrintessFlow" "$APP/Contents/Info.plist"
+          $PB -c "Set :CFBundleDisplayName PrintessFlow" "$APP/Contents/Info.plist" 2>/dev/null || $PB -c "Add :CFBundleDisplayName string PrintessFlow" "$APP/Contents/Info.plist"
+          echo "branded"
+
       - name: Ad-hoc sign (test build)
         # Ad-hoc, NO hardened runtime, so CuraEngine runs unrestricted and we can
         # verify slicing in isolation. Developer ID signing + notarization + staple
@@ -140,12 +161,26 @@ jobs:
           codesign --force --deep -s - "$APP"
           codesign --verify --deep "$APP" && echo "ad-hoc signed"
 
-      - name: Build .dmg
+      - name: Build branded .dmg
         run: |
+          brew install create-dmg >/dev/null
           mkdir -p dmg_stage
           cp -R "PrintessFlow.app" dmg_stage/
-          ln -s /Applications dmg_stage/Applications
-          hdiutil create -volname "PrintessFlow" -srcfolder dmg_stage -ov -format UDZO "PrintessFlow-macOS-arm64.dmg"
+          create-dmg \
+            --volname "PrintessFlow" \
+            --volicon "PrintessFlow.icns" \
+            --background "packaging/MacOS/printessflow_dmg_bg.png" \
+            --window-size 660 400 \
+            --icon-size 96 \
+            --icon "PrintessFlow.app" 165 200 \
+            --app-drop-link 495 200 \
+            "PrintessFlow-macOS-arm64.dmg" \
+            "dmg_stage/" || true
+          if [ ! -f "PrintessFlow-macOS-arm64.dmg" ]; then
+            echo "create-dmg failed; falling back to a plain dmg"
+            ln -s /Applications dmg_stage/Applications
+            hdiutil create -volname "PrintessFlow" -srcfolder dmg_stage -ov -format UDZO "PrintessFlow-macOS-arm64.dmg"
+          fi
           hdiutil verify "PrintessFlow-macOS-arm64.dmg"
 
       - name: Upload the installer
