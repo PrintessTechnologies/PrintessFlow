@@ -94,6 +94,9 @@ Section "PrintessFlow" SEC_MAIN
         FileWrite $0 "asked_dialog_on_project_save = True$\r$\n"
         FileWrite $0 "choice_on_open_project = open_as_project$\r$\n"
         FileWrite $0 "expanded_brands = ;Printess$\r$\n"
+        FileWrite $0 "$\r$\n"
+        FileWrite $0 "[info]$\r$\n"
+        FileWrite $0 "latest_update_version_shown = 99.99.99$\r$\n"
         FileClose $0
     cfg_exists:
 
