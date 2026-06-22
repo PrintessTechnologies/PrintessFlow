@@ -96,11 +96,16 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Download + mount stock Cura 5.12.0 (arm64), copy the app
+      - name: Download stock Cura 5.12.0 (arm64), copy the app
         run: |
           url="https://github.com/Ultimaker/Cura/releases/download/5.12.0/UltiMaker-Cura-5.12.0-macos-ARM64.dmg"
-          curl -L -o cura_stock.dmg "$url"
-          hdiutil attach cura_stock.dmg -mountpoint /Volumes/CuraStock -nobrowse
+          curl -fL -o cura_stock.dmg "$url"
+          echo "downloaded $(stat -f%z cura_stock.dmg) bytes"
+          # UltiMaker's dmg carries a license agreement (SLA); hdiutil can't attach
+          # an SLA image non-interactively ("attach canceled"). Converting the image
+          # strips the SLA, then it attaches headlessly.
+          hdiutil convert cura_stock.dmg -format UDZO -o cura_nosla.dmg
+          hdiutil attach cura_nosla.dmg -mountpoint /Volumes/CuraStock -nobrowse -noverify -noautoopen
           SRC=$(ls -d /Volumes/CuraStock/*.app | head -1)
           echo "stock app: $SRC"
           cp -R "$SRC" "PrintessFlow.app"
