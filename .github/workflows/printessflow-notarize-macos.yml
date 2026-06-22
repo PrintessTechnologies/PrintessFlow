@@ -136,18 +136,14 @@ jobs:
         run: |
           KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
           echo "$NOTARY_KEY_P8" | base64 --decode > "$KEY_PATH"
-          ARGS=(--key "$KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --team-id "$APPLE_TEAM_ID")
           APP="PrintessFlow.app"
           ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/app.zip"
-          echo "Submitting app to Apple notary (waits for the result)..."
-          xcrun notarytool submit "$RUNNER_TEMP/app.zip" "${ARGS[@]}" --wait 2>&1 | tee "$RUNNER_TEMP/notary_app.txt"
-          if ! grep -q "status: Accepted" "$RUNNER_TEMP/notary_app.txt"; then
-            SUB=$(grep -m1 "  id:" "$RUNNER_TEMP/notary_app.txt" | awk '{print $2}')
-            echo "::error::App notarization not Accepted — full Apple log follows"
-            xcrun notarytool log "$SUB" "${ARGS[@]}" || true
-            exit 1
-          fi
-          xcrun stapler staple "$APP"
+          bash packaging/MacOS/notarize.sh "$RUNNER_TEMP/app.zip" \
+            "$KEY_PATH" "$NOTARY_KEY_ID" "$NOTARY_ISSUER_ID" "$APPLE_TEAM_ID"
+          # Staple (also network-bound) with a few retries.
+          for i in 1 2 3 4 5; do
+            xcrun stapler staple "$APP" && break || { echo "staple retry $i"; sleep 15; }
+          done
           xcrun stapler validate "$APP"
           echo "App notarized + stapled"
 
@@ -183,17 +179,12 @@ jobs:
         run: |
           KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
           echo "$NOTARY_KEY_P8" | base64 --decode > "$KEY_PATH"
-          ARGS=(--key "$KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --team-id "$APPLE_TEAM_ID")
           DMG="PrintessFlow-macOS-arm64.dmg"
-          echo "Submitting $DMG to Apple notary (waits for the result)..."
-          xcrun notarytool submit "$DMG" "${ARGS[@]}" --wait 2>&1 | tee "$RUNNER_TEMP/notary_dmg.txt"
-          if ! grep -q "status: Accepted" "$RUNNER_TEMP/notary_dmg.txt"; then
-            SUB=$(grep -m1 "  id:" "$RUNNER_TEMP/notary_dmg.txt" | awk '{print $2}')
-            echo "::error::DMG notarization not Accepted — full Apple log follows"
-            xcrun notarytool log "$SUB" "${ARGS[@]}" || true
-            exit 1
-          fi
-          xcrun stapler staple "$DMG"
+          bash packaging/MacOS/notarize.sh "$DMG" \
+            "$KEY_PATH" "$NOTARY_KEY_ID" "$NOTARY_ISSUER_ID" "$APPLE_TEAM_ID"
+          for i in 1 2 3 4 5; do
+            xcrun stapler staple "$DMG" && break || { echo "staple retry $i"; sleep 15; }
+          done
           xcrun stapler validate "$DMG"
           echo "DMG notarized + stapled (and contains a stapled app)"
 
