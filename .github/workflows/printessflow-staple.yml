@@ -20,6 +20,8 @@ jobs:
   staple:
     name: Staple and re-upload .dmg
     runs-on: macos-14
+    permissions:
+      contents: write   # needed for gh release upload --clobber
 
     steps:
       - name: Check submission status

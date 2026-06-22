@@ -22,6 +22,8 @@ jobs:
   notarize:
     name: Build, sign, notarize, staple, publish (arm64)
     runs-on: macos-14
+    permissions:
+      contents: write   # needed for gh release upload --clobber
     steps:
       - uses: actions/checkout@v4
 
