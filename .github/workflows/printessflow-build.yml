@@ -98,45 +98,14 @@ jobs:
           if (-not $found) { throw "PyInstaller archive cookie missing - the icon edit corrupted the exe overlay" }
           Write-Host "PyInstaller archive intact"
 
-      - name: Sign the app exe (Azure Trusted Signing)
-        if: ${{ env.AZURE_CLIENT_ID != '' }}
-        # Signs the top-level exes in the staged app (incl. UltiMaker-Cura.exe,
-        # which NSIS renames to PrintessFlow.exe at install - rename preserves the
-        # Authenticode signature). Must run after the icon edit (any later change
-        # invalidates the signature) and before NSIS bundles the payload.
-        uses: azure/trusted-signing-action@v0.5.1
-        with:
-          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
-          endpoint: ${{ secrets.AZURE_CODESIGN_ENDPOINT }}
-          trusted-signing-account-name: ${{ secrets.AZURE_CODESIGN_ACCOUNT }}
-          certificate-profile-name: ${{ secrets.AZURE_CODESIGN_PROFILE }}
-          files-folder: ${{ github.workspace }}\packaging\printessflow\app
-          files-folder-filter: exe
-          files-folder-recurse: false
-          file-digest: SHA256
-          timestamp-rfc3161: http://timestamp.acs.microsoft.com
-          timestamp-digest: SHA256
-
-      - name: Re-verify PyInstaller archive survived signing
-        if: ${{ env.AZURE_CLIENT_ID != '' }}
-        shell: pwsh
-        # Authenticode appends a certificate to the file; confirm the PyInstaller
-        # cookie is still locatable so the signed exe still boots.
-        run: |
-          $b = [System.IO.File]::ReadAllBytes("packaging/printessflow/app/UltiMaker-Cura.exe")
-          $magic = [byte[]](0x4D,0x45,0x49,0x0C,0x0B,0x0A,0x0B,0x0E)
-          $start = [Math]::Max(0, $b.Length - 524288)
-          $found = $false
-          for ($i = $b.Length - $magic.Length; $i -ge $start; $i--) {
-            $ok = $true
-            for ($j = 0; $j -lt $magic.Length; $j++) { if ($b[$i+$j] -ne $magic[$j]) { $ok = $false; break } }
-            if ($ok) { $found = $true; break }
-          }
-          if (-not $found) { throw "PyInstaller cookie not found after signing - exe overlay may be broken" }
-          $sig = Get-AuthenticodeSignature "packaging/printessflow/app/UltiMaker-Cura.exe"
-          Write-Host "exe signature status: $($sig.Status)"
+      # NOTE: we deliberately do NOT sign the inner app exes. The Trusted Signing
+      # dlib fails with 0x800700C1 (ERROR_BAD_EXE_FORMAT) on exes with appended
+      # overlays (PyInstaller's archive on UltiMaker-Cura.exe; NSIS data on
+      # uninstall.exe), while normal exes like CuraEngine.exe sign fine. The
+      # artifact that needs signing is the installer below - it carries the
+      # Mark-of-the-Web on download and is what triggers SmartScreen / the
+      # "Windows cannot access the specified device/path" block. Installer-
+      # extracted files don't get MOTW, so the unsigned inner exe runs fine.
 
       - name: Install NSIS
         shell: pwsh
