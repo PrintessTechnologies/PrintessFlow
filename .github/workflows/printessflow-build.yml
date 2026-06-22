@@ -101,15 +101,16 @@ jobs:
           url="https://github.com/Ultimaker/Cura/releases/download/5.12.0/UltiMaker-Cura-5.12.0-macos-ARM64.dmg"
           curl -fL -o cura_stock.dmg "$url"
           echo "downloaded $(stat -f%z cura_stock.dmg) bytes"
-          # UltiMaker's dmg carries a license agreement (SLA); hdiutil can't attach
-          # an SLA image non-interactively ("attach canceled"). Converting the image
-          # strips the SLA, then it attaches headlessly.
-          hdiutil convert cura_stock.dmg -format UDZO -o cura_nosla.dmg
-          hdiutil attach cura_nosla.dmg -mountpoint /Volumes/CuraStock -nobrowse -noverify -noautoopen
-          SRC=$(ls -d /Volumes/CuraStock/*.app | head -1)
-          echo "stock app: $SRC"
+          # UltiMaker's dmg has a license agreement; pipe `yes` to auto-accept it,
+          # and let it auto-mount (a fixed -mountpoint fails on this multi-partition
+          # image, giving "attach canceled").
+          yes | hdiutil attach cura_stock.dmg -nobrowse -noverify -noautoopen
+          echo "Volumes:"; ls -1 /Volumes
+          VOL=$(ls -d /Volumes/*[Cc]ura* 2>/dev/null | head -1)
+          SRC=$(ls -d "$VOL"/*.app | head -1)
+          echo "stock app: $SRC  (vol: $VOL)"
           cp -R "$SRC" "PrintessFlow.app"
-          hdiutil detach /Volumes/CuraStock
+          hdiutil detach "$VOL"
 
       - name: Apply PrintessFlow overlay
         run: python3 packaging/overlay/apply_overlay.py --app-root "PrintessFlow.app" --repo-root .
