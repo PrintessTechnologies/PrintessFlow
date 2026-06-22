@@ -268,6 +268,27 @@ def main():
         for m in missing_src:
             print(f"           - {m}")
         sys.exit(1)
+
+    # Verify key customizations actually landed in the app. Catches wrong-dir
+    # discovery or silent copy failures that would otherwise ship a near-stock
+    # build (the failure mode that motivated this check).
+    required = [
+        share_cura / "plugins" / "WellPlateArrangeTool" / "plugin.json",
+        share_cura / "plugins" / "PrintessAllMaterials" / "plugin.json",
+        share_cura / "plugins" / "PrintessIconFix" / "plugin.json",
+        share_cura / "plugins" / "PostProcessingPlugin" / "scripts" / "PrintessOneAtATime.py",
+        share_cura / "resources" / "definitions" / "custom.def.json",
+        share_cura / "resources" / "setting_visibility" / "printess_v1.0.cfg",
+    ]
+    bad = [str(p) for p in required if not p.exists()]
+    if bad or patched < 1:
+        print("[overlay] FATAL: customization verification failed")
+        for b in bad:
+            print(f"           missing: {b}")
+        if patched < 1:
+            print("           CuraApplication What's-New patch did not apply")
+        sys.exit(1)
+    print("[overlay] verification OK")
     print("[overlay] done")
 
 
