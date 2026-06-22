@@ -117,6 +117,46 @@ EXTRA_PLUGIN_DIRS = [
     ("packaging/printessflow/seed/cura/5.12/plugins/PrintessIconFix", "PrintessIconFix"),
 ]
 
+# Surgical in-place edits to stock files. Used instead of overlaying whole core
+# files (e.g. CuraApplication.py) that differ across Cura versions. Each patch
+# injects `inject` as the first body line right after the `anchor` line.
+PATCHES = [
+    {
+        # Never show the stock UltiMaker "What's New" / version-upgrade dialog on
+        # launch (mirrors the cura/CuraApplication.py override, applied surgically).
+        "rel": "cura/CuraApplication.py",
+        "anchor": "def shouldShowWhatsNewDialog(self) -> bool:",
+        "inject": "        return False  # PrintessFlow: never show the stock What's New / upgrade dialog",
+    },
+]
+
+
+def apply_patches(cura_pkg):
+    if cura_pkg is None:
+        print("[overlay] WARNING: no cura package found; skipping patches")
+        return 0
+    applied = 0
+    for p in PATCHES:
+        f = cura_pkg.parent / p["rel"]
+        if not f.is_file():
+            print(f"[overlay] WARNING: patch target missing: {p['rel']}")
+            continue
+        lines = f.read_text(encoding="utf-8").splitlines()
+        out, done = [], False
+        for i, line in enumerate(lines):
+            out.append(line)
+            if not done and p["anchor"] in line:
+                nxt = lines[i + 1] if i + 1 < len(lines) else ""
+                if p["inject"].strip() not in nxt:
+                    out.append(p["inject"])
+                done = True
+        if done:
+            f.write_text("\n".join(out) + "\n", encoding="utf-8")
+            applied += 1
+        else:
+            print(f"[overlay] WARNING: anchor not found in {p['rel']}: {p['anchor']}")
+    return applied
+
 
 def discover_roots(app_root: Path):
     """Locate the share/cura dir, the cura package dir, and the UM root inside the app."""
@@ -209,7 +249,10 @@ def main():
             target.unlink()
             removed += 1
 
-    # Drop stale bytecode so the overlaid .py files take effect.
+    # Surgical patches to stock core files (after copies, before bytecode purge).
+    patched = apply_patches(cura_pkg)
+
+    # Drop stale bytecode so the overlaid/patched .py files take effect.
     pyc_cleared = 0
     for root in (cura_pkg, share_cura / "plugins"):
         if root and root.exists():
@@ -217,7 +260,7 @@ def main():
                 shutil.rmtree(cache, ignore_errors=True)
                 pyc_cleared += 1
 
-    print(f"[overlay] copied {copied} files, removed {removed}, cleared {pyc_cleared} __pycache__ dirs")
+    print(f"[overlay] copied {copied} files, removed {removed}, patched {patched}, cleared {pyc_cleared} __pycache__ dirs")
     if skipped_dest:
         print(f"[overlay] WARNING: no dest root for {len(skipped_dest)} files: {skipped_dest}")
     if missing_src:
