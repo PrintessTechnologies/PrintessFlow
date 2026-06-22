@@ -28,6 +28,9 @@ dialog_on_project_save = False
 asked_dialog_on_project_save = True
 choice_on_open_project = open_as_project
 expanded_brands = ;Printess
+
+[info]
+latest_update_version_shown = 99.99.99
 CFG
 fi
 
