@@ -1,0 +1,36 @@
+name: PrintessFlow Notary Status
+
+# Read-only: queries Apple for the status (and full log) of a notarization
+# submission. Does NOT download, staple, or publish anything — safe to run to
+# check whether a past submission was Accepted.
+on:
+  workflow_dispatch:
+    inputs:
+      submission_id:
+        description: 'Apple notarization submission ID to query'
+        required: true
+        type: string
+
+jobs:
+  status:
+    name: Query notarization status
+    runs-on: macos-14
+    steps:
+      - name: notarytool info + log
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          echo "$NOTARY_KEY_P8" | base64 --decode > "$KEY_PATH"
+          ARGS=(--key "$KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --team-id "$APPLE_TEAM_ID")
+          echo "=== notarytool info: ${{ inputs.submission_id }} ==="
+          xcrun notarytool info "${{ inputs.submission_id }}" "${ARGS[@]}" || true
+          echo ""
+          echo "=== notarytool log ==="
+          xcrun notarytool log "${{ inputs.submission_id }}" "${ARGS[@]}" || true
+          echo ""
+          echo "=== recent submission history ==="
+          xcrun notarytool history "${ARGS[@]}" | head -40 || true
