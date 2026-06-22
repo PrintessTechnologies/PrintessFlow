@@ -122,7 +122,36 @@ jobs:
           codesign --verify --strict --verbose=2 "$APP"
           echo "Developer ID signed with hardened runtime"
 
-      - name: Build branded .dmg
+      - name: Notarize the app + staple it
+        # Submit the .app itself (zipped) and staple the ticket INTO the bundle.
+        # This is what makes the app verify OFFLINE once a user drags it out of
+        # the dmg — stapling only the dmg leaves the extracted app reliant on an
+        # online notarization check, which fails offline/behind a firewall and
+        # shows "Apple could not verify ... is free of malware".
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey.p8"
+          echo "$NOTARY_KEY_P8" | base64 --decode > "$KEY_PATH"
+          ARGS=(--key "$KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --team-id "$APPLE_TEAM_ID")
+          APP="PrintessFlow.app"
+          ditto -c -k --keepParent "$APP" "$RUNNER_TEMP/app.zip"
+          echo "Submitting app to Apple notary (waits for the result)..."
+          xcrun notarytool submit "$RUNNER_TEMP/app.zip" "${ARGS[@]}" --wait 2>&1 | tee "$RUNNER_TEMP/notary_app.txt"
+          if ! grep -q "status: Accepted" "$RUNNER_TEMP/notary_app.txt"; then
+            SUB=$(grep -m1 "  id:" "$RUNNER_TEMP/notary_app.txt" | awk '{print $2}')
+            echo "::error::App notarization not Accepted — full Apple log follows"
+            xcrun notarytool log "$SUB" "${ARGS[@]}" || true
+            exit 1
+          fi
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
+          echo "App notarized + stapled"
+
+      - name: Build branded .dmg (from the stapled app)
         run: |
           brew install create-dmg >/dev/null
           mkdir -p dmg_stage
@@ -144,6 +173,8 @@ jobs:
           hdiutil verify "PrintessFlow-macOS-arm64.dmg"
 
       - name: Notarize + staple the dmg
+        # The dmg contains an already-stapled app; also notarize + staple the dmg
+        # itself so the download is trusted even before it is mounted.
         env:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
@@ -155,17 +186,16 @@ jobs:
           ARGS=(--key "$KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --team-id "$APPLE_TEAM_ID")
           DMG="PrintessFlow-macOS-arm64.dmg"
           echo "Submitting $DMG to Apple notary (waits for the result)..."
-          xcrun notarytool submit "$DMG" "${ARGS[@]}" --wait 2>&1 | tee "$RUNNER_TEMP/notary.txt"
-          SUBMISSION=$(grep -m1 "  id:" "$RUNNER_TEMP/notary.txt" | awk '{print $2}')
-          echo "Submission id: $SUBMISSION"
-          if ! grep -q "status: Accepted" "$RUNNER_TEMP/notary.txt"; then
-            echo "::error::Notarization not Accepted — full Apple log follows"
-            xcrun notarytool log "$SUBMISSION" "${ARGS[@]}" || true
+          xcrun notarytool submit "$DMG" "${ARGS[@]}" --wait 2>&1 | tee "$RUNNER_TEMP/notary_dmg.txt"
+          if ! grep -q "status: Accepted" "$RUNNER_TEMP/notary_dmg.txt"; then
+            SUB=$(grep -m1 "  id:" "$RUNNER_TEMP/notary_dmg.txt" | awk '{print $2}')
+            echo "::error::DMG notarization not Accepted — full Apple log follows"
+            xcrun notarytool log "$SUB" "${ARGS[@]}" || true
             exit 1
           fi
           xcrun stapler staple "$DMG"
           xcrun stapler validate "$DMG"
-          echo "Notarized + stapled: $DMG"
+          echo "DMG notarized + stapled (and contains a stapled app)"
 
       - name: Publish notarized dmg to release
         env:
