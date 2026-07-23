@@ -4,7 +4,7 @@
 ; seeding the machine/profile config into %APPDATA%\cura\5.12 on first install.
 
 !define APP_NAME     "PrintessFlow"
-!define APP_VERSION  "5.12.0"
+!define APP_VERSION  "1.0.1"
 !define COMPANY      "Printess Technologies"
 !define MAIN_EXE     "PrintessFlow.exe"
 !define SRC_EXE      "UltiMaker-Cura.exe"   ; launcher name produced by PyInstaller
@@ -13,7 +13,7 @@
 ; No admin rights required - installs into the user's LocalAppData folder
 RequestExecutionLevel user
 
-VIProductVersion "5.12.0.0"
+VIProductVersion "1.0.1.0"
 VIAddVersionKey "ProductName"     "${APP_NAME}"
 VIAddVersionKey "CompanyName"     "${COMPANY}"
 VIAddVersionKey "LegalCopyright"  "Copyright (c) 2026 ${COMPANY}. Based on UltiMaker Cura (LGPLv3) and CuraEngine (AGPLv3)."
