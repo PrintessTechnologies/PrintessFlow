@@ -306,23 +306,33 @@ def main():
             print(f"           - {p.relative_to(repo_root)}")
         sys.exit(1)
 
-    # An extruder USER container must carry the machine definition ("custom"),
-    # not the extruder definition ("custom_extruder_N"). fdmextruder has no
-    # parent, so custom_extruder_N only knows the ~30 nozzle/machine settings;
-    # a user container pinned to it silently rejects every per-extruder value
-    # (infill, speed, flow) with "no SettingDefinition", and the field reverts.
-    # Cura itself creates these with definition=custom; the seed must match.
-    bad_def = []
+    # An extruder USER container must (a) carry the machine definition ("custom"),
+    # not the extruder definition ("custom_extruder_N"), AND (b) declare the
+    # extruder it belongs to via `extruder = custom_extruder_N #2` metadata.
+    # fdmextruder has no parent, so custom_extruder_N only knows the ~30
+    # nozzle/machine settings; without both fields Cura can't tie the container
+    # to the extruder stack and rebuilds it against the extruder definition, so
+    # every per-extruder write (infill, speed, flow) is rejected with "no
+    # SettingDefinition" and the field reverts. Cura itself writes definition=custom
+    # + the extruder/machine metadata; the seed must match byte-for-byte.
     user_seed = repo_root / "packaging" / "printessflow" / "seed" / "cura" / "5.12" / "user"
+    bad_user = []
     for p in user_seed.glob("custom_extruder_*_user.inst.cfg"):
-        for line in p.read_text(encoding="utf-8").splitlines():
-            if line.startswith("definition") and "custom_extruder" in line:
-                bad_def.append(p.name)
-    if bad_def:
-        print(f"[overlay] FATAL: {len(bad_def)} extruder user containers pin the extruder "
-              f"definition instead of 'custom' (per-extruder settings will not save):")
-        for n in bad_def:
-            print(f"           - {n}")
+        text = p.read_text(encoding="utf-8")
+        if not any(l.strip() == "definition = custom" for l in text.splitlines()):
+            bad_user.append((p.name, "definition != custom"))
+        elif not any(l.startswith("extruder = custom_extruder_") for l in text.splitlines()):
+            bad_user.append((p.name, "missing 'extruder =' metadata"))
+    g = user_seed / "Printess+V1+Series_user.inst.cfg"
+    if g.exists():
+        gt = g.read_text(encoding="utf-8")
+        if not any(l.startswith("machine = ") for l in gt.splitlines()):
+            bad_user.append((g.name, "missing 'machine =' metadata"))
+    if bad_user:
+        print(f"[overlay] FATAL: {len(bad_user)} user containers are malformed "
+              f"(per-extruder settings will not save):")
+        for n, why in bad_user:
+            print(f"           - {n}: {why}")
         sys.exit(1)
 
     print("[overlay] verification OK")
