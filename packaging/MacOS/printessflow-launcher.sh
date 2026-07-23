@@ -49,4 +49,16 @@ CFG
   fi
 fi
 
+# Repair pass (runs every launch, even when the machine already exists).
+# Installs that predate the user-container stack metadata (definition=custom +
+# extruder=/machine=) could not save any per-extruder setting (infill, speed,
+# flow): the field accepted a value then reverted. The seed above is skipped once
+# the machine exists, so heal the user containers unconditionally here. Only the
+# user containers are replaced; they hold transient, unmerged edits, so dispense
+# tips, machine settings and preferences are left intact.
+if [ -d "$SEED_DIR/user" ]; then
+  mkdir -p "$DATA_DIR/user"
+  cp -R "$SEED_DIR/user/." "$DATA_DIR/user/"
+fi
+
 exec "$SCRIPT_DIR/PrintessFlow-bin" "$@"

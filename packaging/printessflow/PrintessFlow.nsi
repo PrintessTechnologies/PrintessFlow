@@ -105,6 +105,19 @@ Section "PrintessFlow" SEC_MAIN
     cfg_exists:
     seed_skip:
 
+    ; --- Repair pass (runs even when the seed was skipped) ---
+    ;     Installs shipped before the user containers carried their stack
+    ;     metadata (definition=custom + extruder=/machine=) left every
+    ;     per-extruder setting (infill, speed, flow) unwritable: the field
+    ;     accepted a value then reverted. The seed-skip above means a plain
+    ;     reinstall would not replace those broken files, so heal them here
+    ;     unconditionally. Only the user containers are overwritten; they hold
+    ;     transient, unmerged edits, so dispense tips (quality_changes), machine
+    ;     settings (definition_changes) and preferences (cura.cfg) are untouched.
+    SetOverwrite on
+    SetOutPath "$APPDATA\cura\5.12\user"
+    File /r "seed\cura\5.12\user\*"
+
     ; --- License files (LGPL/AGPL/Qt/third-party + attribution) ---
     SetOutPath "$INSTDIR\licenses"
     File /r "licenses\*"
