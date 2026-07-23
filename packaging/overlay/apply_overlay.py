@@ -288,6 +288,24 @@ def main():
         if patched < 1:
             print("           CuraApplication What's-New patch did not apply")
         sys.exit(1)
+
+    # Cura reads .cfg containers as plain utf-8, so a BOM makes configparser
+    # raise MissingSectionHeaderError and the container silently never loads.
+    # This shipped once: every per-extruder dispense-tip profile had a BOM, so
+    # infill/speed/flow reverted the moment the auto-save cleared the user
+    # container. Fail the build rather than ship it again.
+    repo_root = Path(__file__).resolve().parents[2]
+    bom = []
+    for scan in (repo_root / "resources" / "quality_changes",
+                 repo_root / "packaging" / "printessflow" / "seed"):
+        if scan.is_dir():
+            bom += [p for p in scan.rglob("*.cfg") if p.read_bytes()[:3] == b"\xef\xbb\xbf"]
+    if bom:
+        print(f"[overlay] FATAL: {len(bom)} .cfg files have a UTF-8 BOM and will not load:")
+        for p in bom:
+            print(f"           - {p.relative_to(repo_root)}")
+        sys.exit(1)
+
     print("[overlay] verification OK")
     print("[overlay] done")
 
