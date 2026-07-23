@@ -17,6 +17,11 @@ UM.MainWindow
 {
     id: base
 
+    // Set while CustomPrintSetup's auto-save is running. updateQualityChanges()
+    // emits blurSettings as its first action, and honouring that would pull focus
+    // out of the field the user just clicked into, so the save is suppressed here.
+    property bool printessSuppressBlur: false
+
     Item
     {
         id: mainWindow
@@ -539,6 +544,11 @@ UM.MainWindow
         target: Cura.MachineManager
         function onBlurSettings()
         {
+            // Ignore the blur our own auto-save triggers; see printessSuppressBlur.
+            if (base.printessSuppressBlur)
+            {
+                return
+            }
             contentItem.forceActiveFocus()
         }
     }

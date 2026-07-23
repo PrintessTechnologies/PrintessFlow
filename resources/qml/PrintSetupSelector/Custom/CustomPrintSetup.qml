@@ -30,12 +30,38 @@ Item
         {
             Qt.callLater(function()
             {
-                if (!customPrintSetup._autoSaving && Cura.MachineManager.hasUserSettings)
+                if (customPrintSetup._autoSaving || !Cura.MachineManager.hasUserSettings)
                 {
-                    customPrintSetup._autoSaving = true
-                    Cura.ContainerManager.updateQualityChanges()
-                    customPrintSetup._autoSaving = false
+                    return
                 }
+                customPrintSetup._autoSaving = true
+
+                // updateQualityChanges() emits blurSettings as its first action, which
+                // Cura.qml answers by forcing focus away from the active setting field.
+                // Left alone that steals the focus the user just gave a field they
+                // clicked into, so they can type but nothing commits. Suppress it for
+                // the duration of the save.
+                // Reading a missing property yields undefined, but assigning to one
+                // throws, so only touch the flag on a window that declares it.
+                var win = customPrintSetup.Window.window
+                var canSuppress = win && win.printessSuppressBlur !== undefined
+                if (canSuppress)
+                {
+                    win.printessSuppressBlur = true
+                }
+
+                Cura.ContainerManager.updateQualityChanges()
+
+                // Release only once the event loop has drained, so any focus change
+                // caused by the save has already been processed.
+                Qt.callLater(function()
+                {
+                    if (canSuppress)
+                    {
+                        win.printessSuppressBlur = false
+                    }
+                    customPrintSetup._autoSaving = false
+                })
             })
         }
     }

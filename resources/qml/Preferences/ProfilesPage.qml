@@ -231,7 +231,11 @@ UM.ManagementPage
             id: currentSettingsActions
             width: parent.width
 
-            visible: false
+            // Normally hidden: the auto-save in CustomPrintSetup folds changes into
+            // the tip as soon as focus leaves a field, so there is nothing to act on.
+            // Shown only when unsaved changes do linger — e.g. the active tip is
+            // read-only and the merge was skipped — so there is a way out.
+            visible: base.isCurrentItemActivated && Cura.MachineManager.hasUserSettings
 
             spacing: UM.Theme.getSize("default_margin").width
 
