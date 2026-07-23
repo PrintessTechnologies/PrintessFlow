@@ -306,6 +306,25 @@ def main():
             print(f"           - {p.relative_to(repo_root)}")
         sys.exit(1)
 
+    # An extruder USER container must carry the machine definition ("custom"),
+    # not the extruder definition ("custom_extruder_N"). fdmextruder has no
+    # parent, so custom_extruder_N only knows the ~30 nozzle/machine settings;
+    # a user container pinned to it silently rejects every per-extruder value
+    # (infill, speed, flow) with "no SettingDefinition", and the field reverts.
+    # Cura itself creates these with definition=custom; the seed must match.
+    bad_def = []
+    user_seed = repo_root / "packaging" / "printessflow" / "seed" / "cura" / "5.12" / "user"
+    for p in user_seed.glob("custom_extruder_*_user.inst.cfg"):
+        for line in p.read_text(encoding="utf-8").splitlines():
+            if line.startswith("definition") and "custom_extruder" in line:
+                bad_def.append(p.name)
+    if bad_def:
+        print(f"[overlay] FATAL: {len(bad_def)} extruder user containers pin the extruder "
+              f"definition instead of 'custom' (per-extruder settings will not save):")
+        for n in bad_def:
+            print(f"           - {n}")
+        sys.exit(1)
+
     print("[overlay] verification OK")
     print("[overlay] done")
 
