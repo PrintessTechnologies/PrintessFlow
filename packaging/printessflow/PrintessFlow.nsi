@@ -61,6 +61,11 @@ Section "PrintessFlow" SEC_MAIN
     SectionIn RO
 
     ; --- Application binary (CI build payload, staged into .\app) ---
+    ; Wipe any prior install first so files removed or renamed between versions
+    ; don't linger and get loaded (File /r overwrites same-named files but never
+    ; deletes orphans). Only the app dir is cleared -- it holds program files
+    ; only; user config in %APPDATA%\cura\5.12 is separate and preserved below.
+    RMDir /r "$INSTDIR"
     SetOutPath "$INSTDIR"
     File /r "app\*"
 
