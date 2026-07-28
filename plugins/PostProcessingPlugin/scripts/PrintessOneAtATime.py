@@ -365,7 +365,8 @@ class PrintessOneAtATime(Script):
 
             result.append(self._emit_part_start(
                 part_name, first_x, first_y, e1_travel_f, park_z, e1_z_hop_f, e2_z_hop_f,
-                t0_starts, first_layer_z, part_has_t0, part_has_t1))
+                t0_starts, first_layer_z, part_has_t0, part_has_t1,
+                _print_has_t0, _print_has_t1))
 
             last_tool = None
             # _emit_part_start already moved the active-at-start extruder to
@@ -633,24 +634,37 @@ class PrintessOneAtATime(Script):
 
     def _emit_part_start(self, part_name, first_x, first_y, travel_f, park_z,
                          t0_z_hop_f, t1_z_hop_f, t0_starts, first_layer_z,
-                         part_has_t0, part_has_t1):
+                         part_has_t0, part_has_t1, print_has_t0, print_has_t1):
         lines = [f'; --- Part: {part_name} ---']
         # XY first — the axes are already lifted clear (post-home hop, or park_z from a
         # previous part's retract-and-park), so horizontal travel is safe before setting heights.
         if first_x is not None:
             lines.append(f'G1 X{first_x:.3f} Y{first_y:.3f} F{travel_f}')
         # Lower the active extruder to first_layer_z and hold the idle extruder at park_z
-        # (the absolute clearance height). The idle axis is always set to park_z, which only
-        # ever raises it — the post-home hop is lower and between parts it is already parked —
-        # so the idle nozzle always clears bed obstacles such as well-plate walls.
-        if part_has_t0 and part_has_t1:
-            z_val = first_layer_z if t0_starts else park_z
-            a_val = first_layer_z if not t0_starts else park_z
-            lines.append(f'G1 Z{z_val:.3f} A{a_val:.3f} F{min(t0_z_hop_f, t1_z_hop_f)}')
-        elif part_has_t0:
-            lines.append(f'G1 Z{first_layer_z:.3f} A{park_z:.3f} F{t0_z_hop_f}')
-        elif part_has_t1:
-            lines.append(f'G1 A{first_layer_z:.3f} Z{park_z:.3f} F{t1_z_hop_f}')
+        # (the absolute clearance height). Setting the idle axis to park_z only ever raises it
+        # — the post-home hop is lower and between parts it is already parked — so the idle
+        # nozzle always clears bed obstacles such as well-plate walls.
+        #
+        # An axis is only commanded when the PRINT as a whole uses its tool: _startup_datum
+        # homes and G92-zeroes Z only when extruder 0 prints and A only when extruder 1 does,
+        # so touching the other axis here would drive it from an undefined position. The
+        # part-level flags decide which axis descends; the print-level flags decide whether
+        # the idle axis exists at all.
+        terms, feeds = [], []
+        if part_has_t0:
+            terms.append(f'Z{(first_layer_z if t0_starts else park_z):.3f}')
+            feeds.append(t0_z_hop_f)
+        elif print_has_t0:
+            terms.append(f'Z{park_z:.3f}')
+            feeds.append(t0_z_hop_f)
+        if part_has_t1:
+            terms.append(f'A{(first_layer_z if not t0_starts else park_z):.3f}')
+            feeds.append(t1_z_hop_f)
+        elif print_has_t1:
+            terms.append(f'A{park_z:.3f}')
+            feeds.append(t1_z_hop_f)
+        if terms:
+            lines.append('G1 ' + ' '.join(terms) + f' F{min(feeds)}')
         return '\n'.join(lines) + '\n'
 
     # ------------------------------------------------------------------
