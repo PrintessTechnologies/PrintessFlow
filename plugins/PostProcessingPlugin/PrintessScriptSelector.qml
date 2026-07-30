@@ -77,12 +77,14 @@ Rectangle
                 elide: Text.ElideRight
             }
 
+            // One Object at a Time is the default (pre-activated by the machine
+            // instance) and listed first; Layer by Layer must be picked explicitly.
             model: ListModel
             {
                 id: scriptModel
-                ListElement { text: "None";                  scriptKey: "None" }
-                ListElement { text: "Layer by Layer";        scriptKey: "PrintessLayerByLayer" }
                 ListElement { text: "One Object at a Time";  scriptKey: "PrintessOneAtATime" }
+                ListElement { text: "Layer by Layer";        scriptKey: "PrintessLayerByLayer" }
+                ListElement { text: "None";                  scriptKey: "None" }
             }
             textRole: "text"
             currentIndex: 0
@@ -98,24 +100,27 @@ Rectangle
             function updateIndex()
             {
                 var active = manager.printessActiveScript
+                if (active === "PrintessOneAtATime")   { currentIndex = 0; return }
                 if (active === "PrintessLayerByLayer") { currentIndex = 1; return }
-                if (active === "PrintessOneAtATime")   { currentIndex = 2; return }
-                currentIndex = 0
+                currentIndex = 2
             }
 
             onActivated: manager.setPrintessActiveScript(scriptModel.get(currentIndex).scriptKey)
         }
     }
 
-    // ── Layer-by-Layer warning ────────────────────────────────────────────────
-    // Only shown when "Layer by Layer" (index 1) is the active script.
+    // ── Guidance note ─────────────────────────────────────────────────────────
+    // Model order: 0 = One Object at a Time, 1 = Layer by Layer, 2 = None.
+    // Index 0 gets a recommendation note, index 1 the well-plate warning.
     Item
     {
         id: warning
         anchors { top: body.bottom; left: parent.left; right: parent.right }
-        visible: scriptDropdown.currentIndex === 1
+        visible: scriptDropdown.currentIndex === 0 || scriptDropdown.currentIndex === 1
         height: visible ? warningRow.implicitHeight + 2 * UM.Theme.getSize("default_margin").height : 0
         clip: true
+
+        readonly property bool isWarning: scriptDropdown.currentIndex === 1
 
         RowLayout
         {
@@ -135,14 +140,16 @@ Rectangle
                 Layout.alignment: Qt.AlignTop
                 Layout.preferredWidth: UM.Theme.getSize("section_icon").width
                 Layout.preferredHeight: UM.Theme.getSize("section_icon").height
-                source: UM.Theme.getIcon("Warning")
-                color: UM.Theme.getColor("warning")
+                source: warning.isWarning ? UM.Theme.getIcon("Warning") : UM.Theme.getIcon("Information")
+                color: warning.isWarning ? UM.Theme.getColor("warning") : UM.Theme.getColor("primary_button")
             }
 
             UM.Label
             {
                 Layout.fillWidth: true
-                text: "Do not use “Layer by Layer” when printing in well-plates. The dispense tip nozzle will interfere with the well-plate walls."
+                text: warning.isWarning
+                    ? "Do not use “Layer by Layer” when printing in well-plates. The dispense tip nozzle will interfere with the well-plate walls."
+                    : "Recommended for standard gel printing. Each object is completed before the next one begins, which keeps the dispense tip clear of previously printed structures."
                 font: UM.Theme.getFont("default")
                 color: UM.Theme.getColor("text")
                 wrapMode: Text.WordWrap
