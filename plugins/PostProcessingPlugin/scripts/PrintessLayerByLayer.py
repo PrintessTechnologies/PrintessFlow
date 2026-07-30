@@ -25,6 +25,12 @@ PLATE_CENTER_X = 63.0   # mm from the X endstop: build-plate centre after G28
 PLATE_CENTER_Y = 42.0   # mm from the Y endstop: build-plate centre after G28
 G28_HOP        = 30.0   # mm: height G28 hops Z and A to after homing
 
+# Relative clearance lift emitted at the very top of the file, before homing, so the
+# nozzles rise off the bed first. Only the axis of an extruder that actually prints is
+# commanded (Z for extruder 0, A for extruder 1).
+STARTUP_CLEARANCE   = 35.0   # mm to raise
+STARTUP_CLEARANCE_F = 200.0  # feedrate for that lift
+
 
 class PrintessLayerByLayer(Script):
 
@@ -525,9 +531,14 @@ class PrintessLayerByLayer(Script):
         return line
 
     def _startup_datum(self, has_t0, has_t1):
-        """Build the homing + zero-offset datum block from the Slice-panel prefs.
+        """Build the clearance lift + homing + zero-offset datum block.
 
         Order:
+            G91                              relative mode, for the lift only
+            G1 Z.. A.. F..                   raise the used carriage(s) clear of the bed
+                                             before homing. Only the axis of a tool that
+                                             actually prints is commanded: Z for extruder 0,
+                                             A for extruder 1 (T1's Z is renamed to A).
             G90                              absolute mode
             G28 <homed axes>                 combined home; only the checkbox-enabled axes
                                              (Z needs extruder 0, A needs extruder 1). The
@@ -572,7 +583,20 @@ class PrintessLayerByLayer(Script):
         z_active = home_za and has_t0
         a_active = home_za and has_t1
 
-        lines = ['G90']
+        # Relative clearance lift before anything else, so the nozzles come up off
+        # the bed before homing. Gated on tool usage only (not on the homing
+        # checkboxes): an axis whose extruder never prints is never commanded.
+        lines = []
+        lift_axes = []
+        if has_t0:
+            lift_axes.append('Z{0:g}'.format(STARTUP_CLEARANCE))
+        if has_t1:
+            lift_axes.append('A{0:g}'.format(STARTUP_CLEARANCE))
+        if lift_axes:
+            lines.append('G91')
+            lines.append('G1 ' + ' '.join(lift_axes) + ' F{0:g}'.format(STARTUP_CLEARANCE_F))
+
+        lines.append('G90')
 
         home_axes = []
         if home_xy:

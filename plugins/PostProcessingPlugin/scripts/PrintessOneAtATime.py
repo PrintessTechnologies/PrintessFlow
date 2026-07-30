@@ -32,6 +32,12 @@ PLATE_CENTER_X = 63.0   # mm from the X endstop: build-plate centre after G28
 PLATE_CENTER_Y = 42.0   # mm from the Y endstop: build-plate centre after G28
 G28_HOP        = 30.0   # mm: height G28 hops Z and A to after homing
 
+# Relative clearance lift emitted at the very top of the file, before homing, so the
+# nozzles rise off the bed first. Only the axis of an extruder that actually prints is
+# commanded (Z for extruder 0, A for extruder 1).
+STARTUP_CLEARANCE   = 35.0   # mm to raise
+STARTUP_CLEARANCE_F = 200.0  # feedrate for that lift
+
 
 class PrintessOneAtATime(Script):
 
@@ -403,6 +409,16 @@ class PrintessOneAtATime(Script):
                             startup_prime_needed = False
                     else:
                         block = [f';LAYER:{layer_num}']
+                        if tool_switch:
+                            # This tool is parked high: travel in XY first, then
+                            # descend, so it never crosses the print at layer height.
+                            xy_line, t0_lines = self._hoist_first_travel_xy(t0_lines)
+                            if xy_line is not None:
+                                block.append(xy_line)
+                                xm = self._X_RE.search(xy_line)
+                                ym = self._Y_RE.search(xy_line)
+                                travel_pos[0] = (float(xm.group(1)) if xm else travel_pos[0][0],
+                                                 float(ym.group(1)) if ym else travel_pos[0][1])
                         block.append(f'G1 Z{z_val:.3f} F{e1_z_hop_f}')
                     first_t0_block_done = True
                     if do_prime and retraction_enabled[0]:
@@ -441,6 +457,16 @@ class PrintessOneAtATime(Script):
                             startup_prime_needed = False
                     else:
                         block = [f';LAYER:{layer_num}']
+                        if tool_switch:
+                            # This tool is parked high: travel in XY first, then
+                            # descend, so it never crosses the print at layer height.
+                            xy_line, t1_lines = self._hoist_first_travel_xy(t1_lines)
+                            if xy_line is not None:
+                                block.append(xy_line)
+                                xm = self._X_RE.search(xy_line)
+                                ym = self._Y_RE.search(xy_line)
+                                travel_pos[1] = (float(xm.group(1)) if xm else travel_pos[1][0],
+                                                 float(ym.group(1)) if ym else travel_pos[1][1])
                         block.append(f'G1 A{a_val:.3f} F{e2_z_hop_f}')
                     first_t1_block_done = True
                     if do_prime and retraction_enabled[1]:
@@ -671,6 +697,39 @@ class PrintessOneAtATime(Script):
     # Geometry helpers
     # ------------------------------------------------------------------
 
+    def _hoist_first_travel_xy(self, lines):
+        """Pull a block's opening XY travel out so it can be emitted BEFORE the
+        height move.
+
+        Used when a tool takes over mid-part: that tool is sitting at the park
+        height, so it must travel across in XY first and only then descend to the
+        layer height. Any pure Z/A move that preceded the travel is dropped —
+        the caller emits the descend itself.
+
+        Returns (xy_line, remaining_lines); (None, lines) when the block does not
+        start with a plain travel, in which case the caller keeps the original
+        order rather than risk reordering an extruding move.
+        """
+        drop = []
+        for i, line in enumerate(lines):
+            gp = line[:line.index(';')] if ';' in line else line
+            if not self._G01_RE.match(gp.strip()):
+                continue  # comments, M/T commands: leave untouched
+            has_xy = bool(self._X_RE.search(gp) or self._Y_RE.search(gp))
+            has_za = bool(re.search(r'(?<=\s)[ZA][-+]?\d', gp))
+            has_bc = bool(re.search(r'(?<=\s)[BCE][-+]?\d', gp))
+            if not has_xy:
+                if has_za and not has_bc:
+                    drop.append(i)  # standalone descend: replaced by the caller's
+                continue            # pure retract/prime moves stay where they are
+            if has_bc:
+                return None, lines  # already extruding: never reorder
+            cleaned = re.sub(r'\s[ZA][-+]?\d+\.?\d*', '', gp).rstrip()
+            comment = line[line.index(';'):] if ';' in line else ''
+            remaining = [l for j, l in enumerate(lines) if j != i and j not in drop]
+            return cleaned + comment, remaining
+        return None, lines
+
     def _find_first_xy(self, layer_dict, sorted_layers, t0_starts):
         bucket = 't0' if t0_starts else 't1'
         for ln in sorted_layers:
@@ -844,9 +903,14 @@ class PrintessOneAtATime(Script):
         return line
 
     def _startup_datum(self, has_t0, has_t1):
-        """Build the homing + zero-offset datum block from the Slice-panel prefs.
+        """Build the clearance lift + homing + zero-offset datum block.
 
         Order:
+            G91                              relative mode, for the lift only
+            G1 Z.. A.. F..                   raise the used carriage(s) clear of the bed
+                                             before homing. Only the axis of a tool that
+                                             actually prints is commanded: Z for extruder 0,
+                                             A for extruder 1 (T1's Z is renamed to A).
             G90                              absolute mode
             G28 <homed axes>                 combined home; only the checkbox-enabled axes
                                              (Z needs extruder 0, A needs extruder 1). The
@@ -891,7 +955,20 @@ class PrintessOneAtATime(Script):
         z_active = home_za and has_t0
         a_active = home_za and has_t1
 
-        lines = ['G90']
+        # Relative clearance lift before anything else, so the nozzles come up off
+        # the bed before homing. Gated on tool usage only (not on the homing
+        # checkboxes): an axis whose extruder never prints is never commanded.
+        lines = []
+        lift_axes = []
+        if has_t0:
+            lift_axes.append('Z{0:g}'.format(STARTUP_CLEARANCE))
+        if has_t1:
+            lift_axes.append('A{0:g}'.format(STARTUP_CLEARANCE))
+        if lift_axes:
+            lines.append('G91')
+            lines.append('G1 ' + ' '.join(lift_axes) + ' F{0:g}'.format(STARTUP_CLEARANCE_F))
+
+        lines.append('G90')
 
         home_axes = []
         if home_xy:
