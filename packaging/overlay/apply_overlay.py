@@ -23,6 +23,7 @@ from pathlib import Path
 #   resources/...  -> <share/cura>/resources/...   (QML, themes, definitions, images, visibility)
 #   plugins/...    -> <share/cura>/plugins/...
 #   UM/...         -> <UM-root>/UM/...              (Uranium QML)
+#   uranium/...    -> <UM-root>/...                 (patched Uranium plugins)
 MANIFEST = [
     # --- core Python overrides ---
     "cura/Settings/MachineManager.py",
@@ -104,6 +105,11 @@ MANIFEST = [
     "plugins/PrintessPathDesigner/PathDesignerPanel.qml",
     "plugins/PrintessPathDesigner/PathDesignerButton.qml",
     "plugins/PrintessPathDesigner/PathDesigner.svg",
+    # --- patched Uranium plugin ---
+    # Smooth camera rotation out of the top view. Installed by
+    # CuraTestInstall.bat, so it has to ship too or the released build behaves
+    # differently from the one the slicer is tested on.
+    "uranium/plugins/Tools/CameraTool/CameraTool.py",
     "plugins/CuraDrive/plugin.json",
     "plugins/CuraDrive/src/qml/main.qml",
     "plugins/CuraDrive/src/qml/pages/WelcomePage.qml",
@@ -195,6 +201,11 @@ def dest_for(repo_rel: str, share_cura, cura_pkg, um_root):
         return (share_cura / repo_rel) if share_cura else None
     if repo_rel.startswith("UM/"):
         return (um_root / repo_rel) if um_root else None
+    # Uranium's own plugins sit beside its UM package, so um_root is already the
+    # right base and the "uranium/" prefix comes off. CuraTestInstall.bat puts
+    # these in <app>/share/uranium/..., which is the same place.
+    if repo_rel.startswith("uranium/"):
+        return (um_root / repo_rel[len("uranium/"):]) if um_root else None
     return None
 
 
