@@ -322,7 +322,9 @@ UM.MainWindow
                     verticalCenter: tallerThanParent ? undefined : parent.verticalCenter
                     left: parent.left
                 }
-                visible: CuraApplication.platformActivity && !PrintInformation.preSliced
+                // Always show the toolbar (not just when a model is loaded) so the
+                // Path Designer is reachable on an empty build plate.
+                visible: !PrintInformation.preSliced
             }
 
             // A hint for the loaded content view. Overlay items / controls can safely be placed in this area

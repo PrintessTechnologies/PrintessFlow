@@ -239,6 +239,11 @@ Column
             id: sliceButton
             fixedWidthMode: true
 
+            // Matches Draw Paths, Well Plate Arranger and the script selector
+            // beside it. ActionButton defaults to "medium", which left this the
+            // odd one out in a row of otherwise identical buttons.
+            textFont: UM.Theme.getFont("medium_bold")
+
             height: parent.height
 
             anchors.right: parent.right
@@ -247,7 +252,12 @@ Column
             text: widget.waitingForSliceToStart ? catalog.i18nc("@button", "Processing"): catalog.i18nc("@button", "Slice")
             tooltip: catalog.i18nc("@label", "Start the slicing process")
             hoverEnabled: !widget.waitingForSliceToStart
+            // Nothing to slice on an empty plate. Stock Cura got this for free by
+            // hiding the whole panel; the panel is permanent here, so the button
+            // carries the condition itself. Greyed rather than hidden, so the bar
+            // keeps its shape instead of the button coming and going.
             enabled: widget.backendState != UM.Backend.Error && !widget.waitingForSliceToStart
+                     && CuraApplication.platformActivity
             visible: widget.backendState == UM.Backend.NotStarted || widget.backendState == UM.Backend.Error
             onClicked: {
                 sliceOrStopSlicing()
@@ -258,6 +268,9 @@ Column
         {
             id: cancelButton
             fixedWidthMode: true
+            // Same button, same place, different state: it has to match Slice or
+            // the text changes size the moment slicing starts.
+            textFont: UM.Theme.getFont("medium_bold")
             height: parent.height
             anchors.left: parent.left
 

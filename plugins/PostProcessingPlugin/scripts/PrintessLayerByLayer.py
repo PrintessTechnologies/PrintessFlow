@@ -165,11 +165,22 @@ class PrintessLayerByLayer(Script):
 
         result = []
 
+        # The feedrate CuraEngine has in effect. It writes F only when the value
+        # CHANGES, so an extrusion move carrying no F of its own means "same as
+        # the line before" — and the line that set it is often one dropped below,
+        # typically the prime before a wall. Tracked above every continue so the
+        # value survives the drop.
+        self._src_f = None
+
         for chunk in data:
             out_lines = []
             for line in chunk.split('\n'):
                 stripped = line.strip()
                 gp = stripped[:stripped.index(';')] if ';' in stripped else stripped
+                if re.match(r'^G[01]\b', gp, re.IGNORECASE):
+                    src_fm = re.search(r'(?<=\s)F([\d.]+)', gp)
+                    if src_fm:
+                        self._src_f = src_fm.group(1)
 
                 # Track Z from ;Z: markers
                 z_m = re.match(r'^;Z:([\d.]+)', stripped)
@@ -486,8 +497,13 @@ class PrintessLayerByLayer(Script):
             fval = speeds['retract'] if val < 0 else speeds['prime']
             return [gp_nof + f' F{fval}' + cp]
 
-        # XY + B/C (no Z/A): leave F untouched — Cura's per-feature speed
-        return [line]
+        # XY + B/C (no Z/A): Cura's per-feature speed. A line with an F of its own
+        # keeps it. One without meant "same as before", so the tracked feedrate is
+        # written back explicitly rather than left to a predecessor that may no
+        # longer be there.
+        if has_f or getattr(self, '_src_f', None) is None:
+            return [line]
+        return [gp.rstrip() + ' F' + self._src_f + cp]
 
     # -------------------------------------------------------------------------
 

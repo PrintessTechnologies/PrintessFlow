@@ -36,7 +36,10 @@ Rectangle
     {
         id: header
         anchors { top: parent.top; left: parent.left; right: parent.right }
-        height: titleLabel.implicitHeight + 2 * UM.Theme.getSize("default_margin").height
+        // One margin's worth, not two: the title font went up a size for
+        // consistency with the buttons beside it, and the header would otherwise
+        // grow back everything the note below just gave up.
+        height: titleLabel.implicitHeight + UM.Theme.getSize("default_margin").height
         color: UM.Theme.getColor("primary_button")
 
         UM.Label
@@ -46,7 +49,10 @@ Rectangle
             width: parent.width - 2 * UM.Theme.getSize("default_margin").width
             horizontalAlignment: Text.AlignHCenter
             text: "Printess G-Code Formation Scripts"
-            font: UM.Theme.getFont("default")
+            // Same face as Draw Paths and Well Plate Arranger. These sit in one
+            // row, so a different weight or size on any of them reads as an
+            // accident rather than a distinction.
+            font: UM.Theme.getFont("medium_bold")
             color: UM.Theme.getColor("primary_button_text")
             elide: Text.ElideRight
         }
@@ -117,7 +123,10 @@ Rectangle
         id: warning
         anchors { top: body.bottom; left: parent.left; right: parent.right }
         visible: scriptDropdown.currentIndex === 0 || scriptDropdown.currentIndex === 1
-        height: visible ? warningRow.implicitHeight + 2 * UM.Theme.getSize("default_margin").height : 0
+        // One margin's worth of padding, not two. The note is secondary text and
+        // the panel sits in the action bar, where every extra millimetre of
+        // height pushes the bottom edge toward the taskbar.
+        height: visible ? warningRow.implicitHeight + UM.Theme.getSize("default_margin").height : 0
         clip: true
 
         readonly property bool isWarning: scriptDropdown.currentIndex === 1
@@ -138,8 +147,10 @@ Rectangle
             UM.ColorImage
             {
                 Layout.alignment: Qt.AlignTop
-                Layout.preferredWidth: UM.Theme.getSize("section_icon").width
-                Layout.preferredHeight: UM.Theme.getSize("section_icon").height
+                // Scaled with the note itself rather than left at section_icon,
+                // which is sized for a heading and dwarfs small body text.
+                Layout.preferredWidth: Math.round(UM.Theme.getSize("section_icon").width * 0.75)
+                Layout.preferredHeight: Math.round(UM.Theme.getSize("section_icon").height * 0.75)
                 source: warning.isWarning ? UM.Theme.getIcon("Warning") : UM.Theme.getIcon("Information")
                 color: warning.isWarning ? UM.Theme.getColor("warning") : UM.Theme.getColor("primary_button")
             }
@@ -149,8 +160,8 @@ Rectangle
                 Layout.fillWidth: true
                 text: warning.isWarning
                     ? "Do not use “Layer by Layer” when printing in well-plates. The dispense tip nozzle will interfere with the well-plate walls."
-                    : "Recommended for standard gel printing. Each object is completed before the next one begins, which keeps the dispense tip clear of previously printed structures."
-                font: UM.Theme.getFont("default")
+                    : "Recommended for Standard Gel Printing. One object is completed before the next one begins."
+                font: UM.Theme.getFont("small")
                 color: UM.Theme.getColor("text")
                 wrapMode: Text.WordWrap
             }

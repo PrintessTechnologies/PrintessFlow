@@ -62,6 +62,7 @@ class PrintessOneAtATime(Script):
     _Z_RE        = re.compile(r'^;Z:([\d.]+)')
     _X_RE        = re.compile(r'(?<=\s)X([-+]?\d+(?:\.\d*)?)')
     _Y_RE        = re.compile(r'(?<=\s)Y([-+]?\d+(?:\.\d*)?)')
+    _F_RE        = re.compile(r'(?<=\s)F([\d.]+)')
 
     # ------------------------------------------------------------------
 
@@ -202,9 +203,37 @@ class PrintessOneAtATime(Script):
         cur_layer = -1
         cur_mesh  = None
 
+        # Where the moves inside a ;MESH:NONMESH run were heading, and whether
+        # the mesh section that follows has had its first motion yet.
+        #
+        # NONMESH lines are dropped because travels BETWEEN parts are meaningless
+        # once the parts are reordered. The last of them is different: at every
+        # layer change CuraEngine writes the travel that positions the nozzle for
+        # the next layer under NONMESH, so dropping it left the part extruding
+        # from wherever the previous one finished. The extrusion is still the
+        # amount computed for the intended segment, so it lands over the wrong
+        # distance: a blob at the seam when the layer reopens on its wall, a thin
+        # dragged line when it reopens on infill.
+        orphan_x = None
+        orphan_y = None
+        awaiting_first_move = False
+
+        # The feedrate CuraEngine has in effect. It writes F only when the value
+        # CHANGES, so an extrusion move carrying no F of its own means "same as
+        # the line before" — and the line that set it is often one dropped below.
+        # The prime before a wall is the usual case: it is a lone B/C move, so it
+        # goes, and the wall was left running at whatever else survived, normally
+        # a travel. Tracked here, above every continue, for that reason.
+        self._src_f = None
+
         for chunk in layer_chunks:
             for raw_line in chunk.split('\n'):
                 stripped = raw_line.strip()
+                src_gp = stripped[:stripped.index(';')] if ';' in stripped else stripped
+                if self._G01_RE.match(src_gp):
+                    src_fm = self._F_RE.search(src_gp)
+                    if src_fm:
+                        self._src_f = src_fm.group(1)
 
                 lm = self._LAYER_RE.match(stripped)
                 if lm:
@@ -220,8 +249,10 @@ class PrintessOneAtATime(Script):
                     if name == 'NONMESH':
                         cur_mesh  = None
                         cur_group = None
+                        orphan_x = orphan_y = None   # only this run's travels count
                     else:
                         cur_mesh = name
+                        awaiting_first_move = True
                         # Strip StartSliceJob's dedup suffix (#N) as fallback for lookup.
                         base = re.sub(r'\s+#\d+$', '', name)
                         mapped_ext = mesh_extruder_map.get(name, mesh_extruder_map.get(base))
@@ -249,6 +280,18 @@ class PrintessOneAtATime(Script):
                           else self._rename_t1(raw_line)
 
                 if cur_mesh is None:
+                    # Still dropped, but remember where it was going: the last
+                    # destination in this run is where the next part expects the
+                    # nozzle to be.
+                    orphan_gp = (raw_line[:raw_line.index(';')]
+                                 if ';' in raw_line else raw_line).strip()
+                    if self._G01_RE.match(orphan_gp):
+                        xm = self._X_RE.search(orphan_gp)
+                        ym = self._Y_RE.search(orphan_gp)
+                        if xm:
+                            orphan_x = float(xm.group(1))
+                        if ym:
+                            orphan_y = float(ym.group(1))
                     continue
 
                 gp = (renamed[:renamed.index(';')] if ';' in renamed else renamed).strip()
@@ -264,6 +307,27 @@ class PrintessOneAtATime(Script):
                     proc_gp = (proc[:proc.index(';')] if ';' in proc else proc).strip()
                     if self._is_cura_retraction_or_hop(proc_gp):
                         continue
+
+                    # First motion of a mesh section: if it extrudes, the nozzle
+                    # has to be put where that extrusion begins, because the move
+                    # that would have done it was dropped with the NONMESH run.
+                    # A section opening with its own travel needs nothing, and
+                    # restoring a between-parts staging move there would drag a
+                    # pointless trip across the plate into a one-at-a-time part.
+                    if awaiting_first_move and self._G01_RE.match(proc_gp):
+                        has_xy = bool(re.search(r'(?<=\s)[XY][-+]?\d', proc_gp))
+                        has_bc = bool(re.search(r'(?<=\s)[BC][-+]?\d', proc_gp))
+                        if has_xy and has_bc \
+                                and orphan_x is not None and orphan_y is not None:
+                            annotated.append(
+                                {'kind': 'gcode', 'tool': scope,
+                                 'layer': cur_layer, 'mesh': cur_mesh,
+                                 'group': cur_group,
+                                 'line': f'G0 X{orphan_x:.3f} Y{orphan_y:.3f}'
+                                         f' F{_spd(scope)["travel"]}'})
+                        awaiting_first_move = False
+                        orphan_x = orphan_y = None
+
                     annotated.append({'kind': 'gcode', 'tool': scope,
                                       'layer': cur_layer, 'mesh': cur_mesh,
                                       'group': cur_group, 'line': proc})
@@ -369,8 +433,16 @@ class PrintessOneAtATime(Script):
             part_has_t1   = any(ldata['t1'] for ldata in layer_dict.values())
             first_layer_z = layer_z.get(first_layer, 0.0)
 
+            # The approach travel belongs to the extruder that OPENS the part,
+            # which is what t0_starts already decides for the height moves below.
+            # Passing extruder 1's speed unconditionally sent every extruder 2
+            # part across the plate at extruder 1's travel rate: harmless while
+            # the two profiles agreed, and nine times too fast the moment they
+            # did not.
             result.append(self._emit_part_start(
-                part_name, first_x, first_y, e1_travel_f, park_z, e1_z_hop_f, e2_z_hop_f,
+                part_name, first_x, first_y,
+                e1_travel_f if t0_starts else e2_travel_f,
+                park_z, e1_z_hop_f, e2_z_hop_f,
                 t0_starts, first_layer_z, part_has_t0, part_has_t1,
                 _print_has_t0, _print_has_t1))
 
@@ -664,6 +736,10 @@ class PrintessOneAtATime(Script):
         lines = [f'; --- Part: {part_name} ---']
         # XY first — the axes are already lifted clear (post-home hop, or park_z from a
         # previous part's retract-and-park), so horizontal travel is safe before setting heights.
+        #
+        # travel_f must be the travel speed of the extruder named by t0_starts:
+        # this move carries the tool that is about to print, and the two profiles
+        # can hold very different travel speeds.
         if first_x is not None:
             lines.append(f'G1 X{first_x:.3f} Y{first_y:.3f} F{travel_f}')
         # Lower the active extruder to first_layer_z and hold the idle extruder at park_z
@@ -813,8 +889,13 @@ class PrintessOneAtATime(Script):
             fval = speeds['retract'] if val < 0 else speeds['prime']
             return [gp_nof + f' F{fval}' + cp]
 
-        # XY + B/C (no Z/A): leave F untouched — Cura's per-feature speed
-        return [line]
+        # XY + B/C (no Z/A): Cura's per-feature speed. A line with an F of its own
+        # keeps it. One without meant "same as before", so the tracked feedrate is
+        # written back explicitly rather than left to a predecessor that may no
+        # longer be there.
+        if has_f or getattr(self, '_src_f', None) is None:
+            return [line]
+        return [gp.rstrip() + ' F' + self._src_f + cp]
 
     # ------------------------------------------------------------------
     # Line filtering helpers

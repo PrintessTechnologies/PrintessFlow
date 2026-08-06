@@ -114,9 +114,26 @@ Item
         id: undoAction
         text: catalog.i18nc("@action:inmenu menubar:edit", "&Undo")
         icon.name: "edit-undo"
+        // StandardKey.Undo is Ctrl+Z on Windows/Linux and Cmd+Z on macOS.
         shortcut: StandardKey.Undo
-        onTriggered: CuraActions.undo()
-        enabled: CuraActions.canUndo
+
+        // The Path Designer keeps its own drawing history, so while that tool is
+        // active undo applies to the drawing instead of the scene. Its exposed
+        // "CanUndo" property is only present when it is the active tool.
+        readonly property bool pathDesignerCanUndo: UM.Controller.properties.getValue("CanUndo") === true
+
+        onTriggered:
+        {
+            if (pathDesignerCanUndo)
+            {
+                UM.Controller.triggerAction("undoLast")
+            }
+            else
+            {
+                CuraActions.undo()
+            }
+        }
+        enabled: CuraActions.canUndo || pathDesignerCanUndo
     }
 
     Action
@@ -321,12 +338,32 @@ Item
         onTriggered: CuraActions.centerSelection()
     }
 
+    // The Path Designer draws shapes that are not scene models, so while that
+    // tool is active the clipboard shortcuts apply to the drawing instead. Its
+    // "CanCopy" / "CanPaste" properties only exist while it is the active tool,
+    // which is what makes these fall back to the scene everywhere else.
+    readonly property bool pathDesignerCanCopy: UM.Controller.properties.getValue("CanCopy") === true
+    readonly property bool pathDesignerCanPaste: UM.Controller.properties.getValue("CanPaste") === true
+    readonly property bool pathDesignerActive: UM.Controller.properties.getValue("CanCopy") !== undefined
+
     Action
     {
         id: copyAction
         text: catalog.i18nc("@action:inmenu menubar:edit", "Copy to clipboard")
-        onTriggered: CuraActions.copy()
-        enabled: UM.Controller.toolsEnabled && UM.Selection.hasSelection && copy_paste_enabled
+        onTriggered:
+        {
+            if (pathDesignerActive)
+            {
+                UM.Controller.triggerAction("copySelection")
+            }
+            else
+            {
+                CuraActions.copy()
+            }
+        }
+        enabled: pathDesignerActive
+                 ? pathDesignerCanCopy
+                 : (UM.Controller.toolsEnabled && UM.Selection.hasSelection && copy_paste_enabled)
         shortcut: StandardKey.Copy
     }
 
@@ -334,8 +371,20 @@ Item
     {
         id: pasteAction
         text: catalog.i18nc("@action:inmenu menubar:edit", "Paste from clipboard")
-        onTriggered: CuraActions.paste()
-        enabled: UM.Controller.toolsEnabled && copy_paste_enabled
+        onTriggered:
+        {
+            if (pathDesignerActive)
+            {
+                UM.Controller.triggerAction("pasteClipboard")
+            }
+            else
+            {
+                CuraActions.paste()
+            }
+        }
+        enabled: pathDesignerActive
+                 ? pathDesignerCanPaste
+                 : (UM.Controller.toolsEnabled && copy_paste_enabled)
         shortcut: StandardKey.Paste
     }
 
@@ -343,8 +392,21 @@ Item
     {
         id: cutAction
         text: catalog.i18nc("@action:inmenu menubar:edit", "Cut")
-        onTriggered: CuraActions.cut()
-        enabled: UM.Controller.toolsEnabled && UM.Selection.hasSelection && copy_paste_enabled
+        onTriggered:
+        {
+            if (pathDesignerActive)
+            {
+                UM.Controller.triggerAction("cutSelection")
+            }
+            else
+            {
+                CuraActions.cut()
+            }
+        }
+        // Cut needs the same selection Copy does, so it shares CanCopy.
+        enabled: pathDesignerActive
+                 ? pathDesignerCanCopy
+                 : (UM.Controller.toolsEnabled && UM.Selection.hasSelection && copy_paste_enabled)
         shortcut: StandardKey.Cut
     }
 
@@ -445,7 +507,18 @@ Item
         enabled: UM.Controller.toolsEnabled
         icon.name: "edit-select-all"
         shortcut: "Ctrl+A"
-        onTriggered: CuraApplication.selectAll()
+        // While the Path Designer is active, Ctrl+A selects everything drawn.
+        onTriggered:
+        {
+            if (pathDesignerActive)
+            {
+                UM.Controller.triggerAction("selectAllPaths")
+            }
+            else
+            {
+                CuraApplication.selectAll()
+            }
+        }
     }
 
     Action

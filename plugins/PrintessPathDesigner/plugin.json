@@ -1,0 +1,7 @@
+{
+    "name": "Printess Path Designer",
+    "author": "Printess Technologies",
+    "version": "1.0.0",
+    "description": "Draw lines, arcs, circles, and curves on the build plate and save them directly as G-code print paths.",
+    "api": 8
+}

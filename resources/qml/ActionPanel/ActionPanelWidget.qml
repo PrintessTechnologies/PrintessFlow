@@ -17,7 +17,11 @@ Item
     id: base
     width: actionPanelWidget.width + additionalComponents.width
     height: childrenRect.height
-    visible: CuraApplication.platformActivity
+    // Always up. The slice panel below still waits for something on the plate,
+    // but the buttons beside it must not: Draw Paths has to be reachable on an
+    // EMPTY plate, which is exactly when a drawing gets started. Each button
+    // decides its own visibility instead.
+    visible: true
 
     property bool hasPreviewButton: true
 
@@ -25,6 +29,9 @@ Item
     {
         id: actionPanelWidget
 
+        // Always up, so the bar reads as a fixed part of the window rather than
+        // appearing and vanishing with the plate. Stock Cura gated this on
+        // CuraApplication.platformActivity.
         width: UM.Theme.getSize("action_panel_widget").width
         height: childrenRect.height + 2 * UM.Theme.getSize("thick_margin").height
         anchors.right: parent.right
@@ -79,7 +86,9 @@ Item
         anchors.rightMargin: UM.Theme.getSize("default_margin").width
         anchors.bottom: actionPanelWidget.bottom
         anchors.bottomMargin: UM.Theme.getSize("thick_margin").height * 2
-        visible: actionPanelWidget.visible
+        // Anchored to actionPanelWidget, which keeps its geometry while hidden,
+        // so the row stays where it belongs on an empty plate.
+        visible: true
         Row
         {
             id: additionalComponentsRow
