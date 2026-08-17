@@ -231,10 +231,32 @@ jobs:
             "$app/share/cura/plugins/PrintessAllMaterials/plugin.json",
             "$app/share/cura/resources/definitions/custom.def.json",
             "$app/share/cura/resources/setting_visibility/printess_v1.0.cfg",
-            "packaging/printessflow/seed/cura/5.12/machine_instances/Printess+V1+Series.global.cfg"
+            "packaging/printessflow/seed/cura/5.12/machine_instances/Printess+V1+Series.global.cfg",
+            # Path Designer, and the Toolbar.qml that routes its exit prompt.
+            # Toolbar.qml was installed by CuraTestInstall.bat but missing from
+            # the overlay until 1.0.3, so the prompt never fired in a release and
+            # nothing here noticed. Both are asserted now.
+            "$app/share/cura/plugins/PrintessPathDesigner/plugin.json",
+            "$app/share/cura/resources/qml/Toolbar.qml",
+            # Flow Rate Tester. The .qml is listed as well as the .json because
+            # the plugin ships as a whole-directory copy: checking only the
+            # manifest-ish file would pass even if the copy brought nothing else.
+            "$app/share/cura/plugins/PrintessFlowTester/plugin.json",
+            "$app/share/cura/plugins/PrintessFlowTester/FlowTesterDialog.qml",
+            "$app/share/cura/plugins/PrintessFlowTester/FlowTestGenerator.py"
           )
           foreach ($m in $markers) {
             if (-not (Test-Path $m)) { throw "missing customization marker: $m" }
+          }
+          # The other half: plugins that must NOT be present. These are the
+          # UltiMaker cloud/network features removed in 1.0.3 because their
+          # startup behavior (mDNS discovery, serial scanning, vendor beacons)
+          # is what got PrintessFlow terminated by CrowdStrike. Nothing else
+          # would notice if a future Cura bump quietly reinstated one.
+          $forbidden = @("UM3NetworkPrinting", "USBPrinting", "CuraDrive",
+                         "SliceInfoPlugin", "FirmwareUpdateChecker", "DigitalLibrary")
+          foreach ($f in $forbidden) {
+            if (Test-Path "$app/share/cura/plugins/$f") { throw "removed plugin is back in the payload: $f" }
           }
           if (-not (Test-Path "packaging/printessflow/PrintessFlow-Setup.exe")) { throw "installer was not produced" }
           Write-Host "customizations + seed + installer verified"
