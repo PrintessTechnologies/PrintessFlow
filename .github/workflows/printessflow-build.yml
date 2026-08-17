@@ -18,10 +18,6 @@ on:
           - windows
           - macos
         default: both
-      release:
-        description: 'Publish a GitHub Release with the installers attached'
-        type: boolean
-        default: false
 
 jobs:
   build-windows:
@@ -424,67 +420,17 @@ jobs:
           if-no-files-found: warn
 
   # ---------------------------------------------------------------------------
-  # Attach the installers to a GitHub Release.
+  # NO release job, deliberately.
   #
-  # They used to be upload-artifact only, which expires after 7 days and is not
-  # reachable from the Releases page, so every published release had to have its
-  # binaries attached by hand.
+  # A `release` job using ${{ github.token }} published v1.0.3 as
+  # "github-actions[bot]", while every previous release is authored by
+  # PrintessTechnologies. Releases are cut by hand instead, so the author on the
+  # Releases page is the account that actually owns the product:
   #
-  # The version is READ FROM PrintessFlow.nsi rather than typed as an input, so
-  # the tag, the release title and the version baked into the installer's
-  # metadata cannot disagree with each other.
+  #   gh run download <run-id> --dir dist
+  #   gh release create vX.Y.Z dist/*/PrintessFlow-Setup.exe   #                            dist/*/PrintessFlow-macOS-arm64.dmg   #                            --title "PrintessFlow X.Y.Z" --notes-file notes.md
+  #
+  # The macOS dmg must come from printessflow-notarize-macos.yml, NOT from the
+  # build job here: this job only ad-hoc signs, and an ad-hoc signed dmg is
+  # refused by Gatekeeper on any Mac but the one that built it.
   # ---------------------------------------------------------------------------
-  release:
-    name: Publish GitHub Release
-    needs: [build-windows, build-macos]
-    # `always()` because a platform-specific build legitimately SKIPS the other
-    # job, and a skipped dependency would otherwise skip this too. Failures are
-    # still fatal: a release must never be cut from a build that did not pass
-    # its signature and archive checks.
-    if: ${{ always() && inputs.release && !cancelled() && !contains(needs.*.result, 'failure') }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Read the version from PrintessFlow.nsi
-        id: ver
-        run: |
-          version=$(grep -oP '^!define APP_VERSION\s+"\K[^"]+' packaging/printessflow/PrintessFlow.nsi)
-          if [ -z "$version" ]; then echo "could not read APP_VERSION"; exit 1; fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version"    >> "$GITHUB_OUTPUT"
-          echo "Version: $version"
-
-      - name: Download the built installers
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-
-      - name: Show what will be attached
-        run: |
-          find dist -type f -printf '%p  (%s bytes)\n'
-          count=$(find dist -type f \( -name '*.exe' -o -name '*.dmg' \) | wc -l)
-          if [ "$count" -eq 0 ]; then
-            echo "no installer artifacts were produced - refusing to publish an empty release"
-            exit 1
-          fi
-
-      - name: Create or update the release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tag="${{ steps.ver.outputs.tag }}"
-          files=$(find dist -type f \( -name '*.exe' -o -name '*.dmg' \))
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "release $tag exists - replacing its assets"
-            gh release upload "$tag" $files --clobber
-          else
-            gh release create "$tag" $files \
-              --title "PrintessFlow ${{ steps.ver.outputs.version }}" \
-              --target "${{ github.sha }}" \
-              --generate-notes
-          fi
-          gh release view "$tag" --json tagName,assets \
-            --jq '.tagName + " -> " + ([.assets[].name] | join(", "))'

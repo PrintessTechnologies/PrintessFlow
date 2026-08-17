@@ -6,24 +6,17 @@ name: PrintessFlow Notarize macOS
 #
 # It rebuilds the same overlay app as the build workflow, but signs it with the
 # Developer ID Application certificate + hardened runtime, submits the dmg to
-# Apple's notary service, waits for the result, staples the ticket, and
-# re-uploads the notarized dmg to the target release (default v1.0),
-# replacing the ad-hoc dmg in place.
+# Apple's notary service, waits for the result, staples the ticket, and leaves
+# the notarized dmg as a build artifact for a human to attach to the release.
 on:
   workflow_dispatch:
-    inputs:
-      release_tag:
-        description: 'Release tag to publish the notarized dmg to'
-        required: true
-        type: string
-        default: v1.0
 
 jobs:
   notarize:
-    name: Build, sign, notarize, staple, publish (arm64)
+    name: Build, sign, notarize, staple (arm64)
     runs-on: macos-14
     permissions:
-      contents: write   # needed for gh release upload --clobber
+      contents: read    # no longer publishes to the release; see the note below
     steps:
       - uses: actions/checkout@v4
 
@@ -188,13 +181,18 @@ jobs:
           xcrun stapler validate "$DMG"
           echo "DMG notarized + stapled (and contains a stapled app)"
 
-      - name: Publish notarized dmg to release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release upload "${{ inputs.release_tag }}" "PrintessFlow-macOS-arm64.dmg" \
-            --repo "${{ github.repository }}" --clobber
-          echo "Replaced the macOS dmg on ${{ inputs.release_tag }} with the notarized build"
+      # The dmg is NOT uploaded to the release from here any more. That used
+      # ${{ github.token }}, so the asset landed as github-actions[bot] rather
+      # than as the account that owns the product. The notarized dmg leaves
+      # this workflow as a build ARTIFACT and is attached to the release by
+      # hand:
+      #
+      #   gh run download <this-run-id> --name PrintessFlow-macOS-arm64-notarized
+      #   gh release upload vX.Y.Z PrintessFlow-macOS-arm64.dmg --clobber
+      #
+      # Signing, notarizing and stapling still happen HERE: they need macOS,
+      # the Developer ID certificate and the notary key. Only the publishing
+      # step moved out.
 
       - name: Upload notarized dmg as artifact
         if: ${{ always() }}
