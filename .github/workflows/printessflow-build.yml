@@ -120,22 +120,51 @@ jobs:
       # so the file it produces is a clean unsigned image that signs normally.
       #
       # Verified before this step so a malformed PE can never reach the signer.
-      - name: Verify the app exe is a clean unsigned PE
+      - name: Drop stock Cura's uninstaller from the payload
         shell: pwsh
+        # The stock install tree contains uninstall.exe, written by stock Cura's
+        # own NSIS installer, and the payload copy brings it along. PrintessFlow
+        # never uses it: PrintessFlow.nsi writes its own via WriteUninstaller at
+        # install time.
+        #
+        # It is also a MALFORMED PE. Its certificate directory points ~166 MB
+        # past its own EOF, inherited from the much larger installer it was
+        # extracted from, and signtool rejects exactly that with 0x800700C1.
+        # That failed the whole signing step on the first 1.0.3 build, AFTER it
+        # had already signed CuraEngine.exe and UltiMaker-Cura.exe correctly.
         run: |
-          $exe = "packaging/printessflow/app/UltiMaker-Cura.exe"
-          $b = [System.IO.File]::ReadAllBytes($exe)
-          $pe = [BitConverter]::ToInt32($b, 0x3C)
-          $opt = $pe + 24
-          $magic = [BitConverter]::ToUInt16($b, $opt)
-          if ($magic -eq 0x20B) { $dd = $opt + 112 } else { $dd = $opt + 96 }
-          $certOff  = [BitConverter]::ToUInt32($b, $dd + 32)
-          $certSize = [BitConverter]::ToUInt32($b, $dd + 36)
-          Write-Host "certificate directory: offset=$certOff size=$certSize filesize=$($b.Length)"
-          if ($certOff -ne 0 -or $certSize -ne 0) {
-            throw "certificate directory is not clear before signing (offset $certOff, size $certSize) - UpdateExeIcon.ps1 did not strip the inherited signature"
+          $u = "packaging/printessflow/app/uninstall.exe"
+          if (Test-Path $u) { Remove-Item $u -Force; Write-Host "removed stock Cura's uninstall.exe from the payload" }
+          else { Write-Host "no stock uninstall.exe present" }
+
+      - name: Verify every exe to be signed is a clean PE
+        shell: pwsh
+        # Checks ALL of them, not just the app exe. The signer is pointed at the
+        # whole folder, so one malformed binary anywhere in it fails the step and
+        # the build, naming a file the previous single-file check never looked
+        # at. A certificate directory must be either absent (0/0) or entirely
+        # inside the file; anything else is a tampered-looking PE.
+        run: |
+          $bad = 0
+          Get-ChildItem "packaging/printessflow/app" -Filter *.exe | ForEach-Object {
+            $b = [System.IO.File]::ReadAllBytes($_.FullName)
+            $pe = [BitConverter]::ToInt32($b, 0x3C)
+            $opt = $pe + 24
+            $magic = [BitConverter]::ToUInt16($b, $opt)
+            if ($magic -eq 0x20B) { $dd = $opt + 112 } else { $dd = $opt + 96 }
+            $certOff  = [BitConverter]::ToUInt32($b, $dd + 32)
+            $certSize = [BitConverter]::ToUInt32($b, $dd + 36)
+            $end = [int64]$certOff + [int64]$certSize
+            if ($certOff -eq 0 -and $certSize -eq 0) {
+              Write-Host "$($_.Name): clean unsigned, no certificate directory"
+            } elseif ($end -le $b.Length) {
+              Write-Host "$($_.Name): signature present and ends inside the file"
+            } else {
+              Write-Host "$($_.Name): MALFORMED - certificate directory ends at $end, file is $($b.Length) bytes"
+              $bad++
+            }
           }
-          Write-Host "app exe is a clean unsigned PE"
+          if ($bad -gt 0) { throw "$bad executable(s) have a certificate directory running past EOF; signtool fails these with 0x800700C1" }
 
       - name: Sign the app exe (Azure Trusted Signing)
         if: ${{ env.AZURE_CLIENT_ID != '' }}
