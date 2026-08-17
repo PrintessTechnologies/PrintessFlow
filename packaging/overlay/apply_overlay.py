@@ -63,6 +63,12 @@ MANIFEST = [
     "resources/qml/Settings/SettingItem.qml",
     "resources/qml/ActionPanel/ActionPanelWidget.qml",
     "resources/qml/ActionPanel/SliceProcessWidget.qml",
+    # Routes a click on the Path Designer's toolbar icon to `requestExit` so the
+    # tool can ask what to do with an unsaved drawing. Installed by
+    # CuraTestInstall.bat but MISSING from this list until 2026-08-17, so every
+    # release so far shipped the stock Toolbar and the exit prompt never fired:
+    # leaving the tool discarded the drawing silently.
+    "resources/qml/Toolbar.qml",
     "resources/themes/cura-light/theme.json",
     "resources/themes/cura-light/icons/default/WellPlate.svg",
     "resources/definitions/fdmprinter.def.json",
@@ -110,12 +116,11 @@ MANIFEST = [
     # CuraTestInstall.bat, so it has to ship too or the released build behaves
     # differently from the one the slicer is tested on.
     "uranium/plugins/Tools/CameraTool/CameraTool.py",
-    "plugins/CuraDrive/plugin.json",
-    "plugins/CuraDrive/src/qml/main.qml",
-    "plugins/CuraDrive/src/qml/pages/WelcomePage.qml",
-    "plugins/CuraDrive/src/qml/components/BackupListFooter.qml",
-    "plugins/CuraDrive/src/qml/components/BackupListItemDetails.qml",
-    "plugins/CuraDrive/src/qml/components/BackupListItem.qml",
+    # The six CuraDrive files that rebranded it as "Printess Backups" are gone:
+    # CuraDrive itself is in REMOVED_PLUGINS, so copying them in would only mean
+    # writing files into a directory deleted moments later. The customizations
+    # are still in the repo under plugins/CuraDrive/ if the feature is ever
+    # wanted back, at which point both this list and REMOVED_PLUGINS change.
     # --- Uranium QML ---
     "UM/Qt/qml/UM/Preferences/ManagementPage.qml",
 ]
@@ -128,10 +133,58 @@ DELETIONS = [
     "resources/setting_visibility/expert.cfg",
 ]
 
+# Stock plugin directories removed from the shipped app.
+#
+# All of these are UltiMaker cloud/network features that PrintessFlow does not
+# use, and together they are most of what the app DOES in its first seconds:
+# CrowdStrike terminated PrintessFlow.exe on a user's machine with "malicious
+# behavior was detected", and the profile it presented was an unsigned binary,
+# with no prevalence, running from a user-writable directory, that on launch
+# broadcast mDNS across the local subnet, enumerated serial devices, spawned a
+# child process, and beaconed to several ultimaker.com domains. No one of those
+# is malicious; the composite on an unknown binary is what gets killed.
+#
+# Removing them is a product simplification as much as a security one. None has
+# ever worked for a Printess machine.
+#
+# Verified before listing: none of these is referenced as a QML TYPE anywhere
+# outside its own directory, so nothing fails to construct without them.
+REMOVED_PLUGINS = [
+    # Starts Zeroconf/mDNS at launch (UM3OutputDevicePlugin.start ->
+    # ZeroConfClient -> ServiceBrowser on _ultimaker._tcp.local.) to discover
+    # UltiMaker network printers. Active LAN service discovery is the single
+    # strongest behavioral signal in the list, and a Printess V1 is never on it.
+    "UM3NetworkPrinting",
+    # Cura acting as the printer host over serial: opens a COM port and streams
+    # g-code itself. PrintessFlow does not drive the printer at all - it writes
+    # a .gcode file and Pronterface hosts the connection - so this only ever
+    # enumerated serial ports looking for hardware it would never talk to.
+    "USBPrinting",
+    # Backups to UltiMaker's cloud behind an account.ultimaker.com OAuth flow,
+    # shipped rebranded as "Printess Backups". Removed at the user's request:
+    # customer configuration should not be sitting in UltiMaker's cloud.
+    "CuraDrive",
+    # Slice telemetry to statistics.ultimaker.com. A rebranded product should
+    # not be reporting its users' slices to the upstream vendor.
+    "SliceInfoPlugin",
+    # Checks UltiMaker firmware versions for UltiMaker printers. Already hidden
+    # from the Extensions menu; this stops it loading and phoning home at all.
+    "FirmwareUpdateChecker",
+    # UltiMaker Digital Factory cloud storage.
+    "DigitalLibrary",
+]
+
 # Plugin directories sourced from a non-standard location, copied wholesale into
 # <share/cura>/plugins/<name>. PrintessIconFix lives under the seed in the repo.
 EXTRA_PLUGIN_DIRS = [
     ("packaging/printessflow/seed/cura/5.12/plugins/PrintessIconFix", "PrintessIconFix"),
+    # Flow Rate Tester. Shipped as a WHOLE DIRECTORY rather than as named files
+    # in MANIFEST above, deliberately: the plugin is still being worked on, and a
+    # file list has to be updated by hand every time a file is added or renamed.
+    # It was already in CuraTestInstall.bat and absent from this file, so the
+    # feature worked locally and would have been missing from the release
+    # entirely. A directory entry cannot drift that way.
+    ("plugins/PrintessFlowTester", "PrintessFlowTester"),
 ]
 
 # Surgical in-place edits to stock files. Used instead of overlaying whole core
@@ -251,7 +304,12 @@ def main():
         dest = share_cura / "plugins" / plugin_name
         if dest.exists():
             shutil.rmtree(dest)
-        shutil.copytree(src, dest)
+        # Ignore build and VCS droppings. Without this a developer's stale
+        # __pycache__ ships inside the installer, and a .pyc whose source no
+        # longer matches is exactly the kind of thing that runs old code on a
+        # user's machine and cannot be reproduced locally.
+        shutil.copytree(src, dest, ignore = shutil.ignore_patterns(
+            "__pycache__", "*.pyc", "*.pyo", ".git", ".gitignore", "*.orig", "*.rej"))
         copied += 1
 
     # printess.ico is generated locally by the .bat; here derive it from the
@@ -270,6 +328,21 @@ def main():
         if target.exists():
             target.unlink()
             removed += 1
+
+    # Stock plugin directories dropped from the shipped app (see REMOVED_PLUGINS).
+    # Absence is reported rather than ignored: if UltiMaker renames one of these
+    # in a future Cura, silently doing nothing would put mDNS discovery or the
+    # serial scanner back into the product without a word.
+    dropped_plugins = []
+    for name in REMOVED_PLUGINS:
+        target = share_cura / "plugins" / name
+        if target.is_dir():
+            shutil.rmtree(target)
+            dropped_plugins.append(name)
+        else:
+            print(f"[overlay] NOTE: plugin to remove was not present: {name}")
+    print(f"[overlay] plugins removed: {len(dropped_plugins)} "
+          f"({', '.join(dropped_plugins) if dropped_plugins else 'none'})")
 
     # Surgical patches to stock core files (after copies, before bytecode purge).
     patched = apply_patches(cura_pkg)

@@ -322,7 +322,9 @@ UM.ManagementPage
             contentItem: Column
             {
                 spacing: UM.Theme.getSize("default_margin").height
-                width: 320
+                // Scaled: bare numbers do not follow the display scaling that
+                // the fonts inside them do (see Theme.py).
+                width: Math.round(320 * screenScaleFactor)
 
                 UM.Label
                 {
@@ -355,7 +357,7 @@ UM.ManagementPage
                     TextField
                     {
                         id: syringeField
-                        width: 120
+                        width: Math.round(120 * screenScaleFactor)
                         placeholderText: "e.g. 3"
                         selectByMouse: true
                         validator: DoubleValidator
@@ -400,7 +402,7 @@ UM.ManagementPage
                     TextField
                     {
                         id: diameterField
-                        width: 120
+                        width: Math.round(120 * screenScaleFactor)
                         placeholderText: "e.g. 4.76"
                         selectByMouse: true
                         validator: DoubleValidator

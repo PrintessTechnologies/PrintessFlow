@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Five test lines of increasing bead width: the strip this tool prints.
+     Fill-only, no strokes anywhere. A stroked path crashes Qt6Svg 6.6 at
+     startup and the application never opens, with nothing in cura.log. -->
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <path d="M3,4.6h18v1.1H3V4.6z"/>
+  <path d="M3,8.2h18v1.7H3V8.2z"/>
+  <path d="M3,12.4h18v2.3H3V12.4z"/>
+  <path d="M3,17.2h18v2.9H3V17.2z"/>
+</svg>

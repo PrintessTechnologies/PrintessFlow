@@ -207,7 +207,10 @@ Item
         Column
         {
             spacing: UM.Theme.getSize("default_margin").height
-            width: 400
+            // Scaled. Theme sizes are already scaled for the display and
+            // rounded to a whole pixel by Theme.py; a bare number is not, so at
+            // 150% scaling the fonts grew by half and this dialog did not.
+            width: Math.round(400 * screenScaleFactor)
 
             UM.Label
             {
@@ -226,7 +229,7 @@ Item
                 Rectangle
                 {
                     id: mirrorE1toE2Rect
-                    width: 180
+                    width: Math.round(180 * screenScaleFactor)
                     height: mirrorE1toE2Col.implicitHeight + 2 * UM.Theme.getSize("default_margin").height
                     color: mirrorE1toE2Area.containsMouse ? UM.Theme.getColor("primary").lighter(1.9) : "transparent"
                     border.width: UM.Theme.getSize("default_lining").width
@@ -295,7 +298,7 @@ Item
                 Rectangle
                 {
                     id: mirrorE2toE1Rect
-                    width: 180
+                    width: Math.round(180 * screenScaleFactor)
                     height: mirrorE2toE1Col.implicitHeight + 2 * UM.Theme.getSize("default_margin").height
                     color: mirrorE2toE1Area.containsMouse ? UM.Theme.getColor("primary").lighter(1.9) : "transparent"
                     border.width: UM.Theme.getSize("default_lining").width
@@ -386,7 +389,10 @@ Item
         Column
         {
             spacing: UM.Theme.getSize("default_margin").height
-            width: 400
+            // Scaled. Theme sizes are already scaled for the display and
+            // rounded to a whole pixel by Theme.py; a bare number is not, so at
+            // 150% scaling the fonts grew by half and this dialog did not.
+            width: Math.round(400 * screenScaleFactor)
 
             UM.Label
             {

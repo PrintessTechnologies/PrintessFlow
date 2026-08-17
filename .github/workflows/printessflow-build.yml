@@ -18,6 +18,10 @@ on:
           - windows
           - macos
         default: both
+      release:
+        description: 'Publish a GitHub Release with the installers attached'
+        type: boolean
+        default: false
 
 jobs:
   build-windows:
@@ -98,14 +102,79 @@ jobs:
           if (-not $found) { throw "PyInstaller archive cookie missing - the icon edit corrupted the exe overlay" }
           Write-Host "PyInstaller archive intact"
 
-      # NOTE: we deliberately do NOT sign the inner app exes. The Trusted Signing
-      # dlib fails with 0x800700C1 (ERROR_BAD_EXE_FORMAT) on exes with appended
-      # overlays (PyInstaller's archive on UltiMaker-Cura.exe; NSIS data on
-      # uninstall.exe), while normal exes like CuraEngine.exe sign fine. The
-      # artifact that needs signing is the installer below - it carries the
-      # Mark-of-the-Web on download and is what triggers SmartScreen / the
-      # "Windows cannot access the specified device/path" block. Installer-
-      # extracted files don't get MOTW, so the unsigned inner exe runs fine.
+      # The inner app exe IS signed, as of 2026-08-17.
+      #
+      # It used not to be, on the reasoning that only the installer carries
+      # Mark-of-the-Web and therefore only the installer matters for SmartScreen.
+      # That is true of SmartScreen and false of everything else: an EDR such as
+      # CrowdStrike judges the process when it runs and does not consult MOTW at
+      # all. An unsigned PyInstaller bootloader with almost no global prevalence
+      # is close to a worst-case reputation profile, and users were blocked.
+      #
+      # The 0x800700C1 (ERROR_BAD_EXE_FORMAT) failure that justified skipping it
+      # was NOT caused by PyInstaller's overlay. UpdateExeIcon.ps1 re-appended
+      # the stock UltiMaker signature after the resource swap had moved every
+      # offset, leaving the certificate directory pointing 13824 bytes past EOF;
+      # signtool rejects exactly that. The script now strips the inherited
+      # signature and zeroes the certificate directory and the header checksum,
+      # so the file it produces is a clean unsigned image that signs normally.
+      #
+      # Verified before this step so a malformed PE can never reach the signer.
+      - name: Verify the app exe is a clean unsigned PE
+        shell: pwsh
+        run: |
+          $exe = "packaging/printessflow/app/UltiMaker-Cura.exe"
+          $b = [System.IO.File]::ReadAllBytes($exe)
+          $pe = [BitConverter]::ToInt32($b, 0x3C)
+          $opt = $pe + 24
+          $magic = [BitConverter]::ToUInt16($b, $opt)
+          if ($magic -eq 0x20B) { $dd = $opt + 112 } else { $dd = $opt + 96 }
+          $certOff  = [BitConverter]::ToUInt32($b, $dd + 32)
+          $certSize = [BitConverter]::ToUInt32($b, $dd + 36)
+          Write-Host "certificate directory: offset=$certOff size=$certSize filesize=$($b.Length)"
+          if ($certOff -ne 0 -or $certSize -ne 0) {
+            throw "certificate directory is not clear before signing (offset $certOff, size $certSize) - UpdateExeIcon.ps1 did not strip the inherited signature"
+          }
+          Write-Host "app exe is a clean unsigned PE"
+
+      - name: Sign the app exe (Azure Trusted Signing)
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+        uses: azure/trusted-signing-action@v0.5.1
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_CODESIGN_ENDPOINT }}
+          trusted-signing-account-name: ${{ secrets.AZURE_CODESIGN_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.AZURE_CODESIGN_PROFILE }}
+          files-folder: ${{ github.workspace }}\packaging\printessflow\app
+          files-folder-filter: exe
+          files-folder-recurse: false
+
+      - name: Verify the app exe signature
+        if: ${{ env.AZURE_CLIENT_ID != '' }}
+        shell: pwsh
+        run: |
+          $sig = Get-AuthenticodeSignature "packaging/printessflow/app/UltiMaker-Cura.exe"
+          Write-Host "app exe signature status: $($sig.Status)"
+          if ($sig.Status -ne 'Valid') { throw "app exe signature not valid: $($sig.Status)" }
+
+      # Re-checked AFTER signing: signing rewrites the overlay region, and a
+      # broken PyInstaller archive would only show up when the app is launched.
+      - name: Verify PyInstaller archive survived signing
+        shell: pwsh
+        run: |
+          $b = [System.IO.File]::ReadAllBytes("packaging/printessflow/app/UltiMaker-Cura.exe")
+          $magic = [byte[]](0x4D,0x45,0x49,0x0C,0x0B,0x0A,0x0B,0x0E)
+          $start = [Math]::Max(0, $b.Length - 262144)
+          $found = $false
+          for ($i = $b.Length - $magic.Length; $i -ge $start; $i--) {
+            $ok = $true
+            for ($j = 0; $j -lt $magic.Length; $j++) { if ($b[$i+$j] -ne $magic[$j]) { $ok = $false; break } }
+            if ($ok) { $found = $true; break }
+          }
+          if (-not $found) { throw "PyInstaller archive cookie missing after signing" }
+          Write-Host "PyInstaller archive intact after signing"
 
       - name: Install NSIS
         shell: pwsh
@@ -302,3 +371,69 @@ jobs:
           path: PrintessFlow-macOS-arm64.dmg
           retention-days: 7
           if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # Attach the installers to a GitHub Release.
+  #
+  # They used to be upload-artifact only, which expires after 7 days and is not
+  # reachable from the Releases page, so every published release had to have its
+  # binaries attached by hand.
+  #
+  # The version is READ FROM PrintessFlow.nsi rather than typed as an input, so
+  # the tag, the release title and the version baked into the installer's
+  # metadata cannot disagree with each other.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-macos]
+    # `always()` because a platform-specific build legitimately SKIPS the other
+    # job, and a skipped dependency would otherwise skip this too. Failures are
+    # still fatal: a release must never be cut from a build that did not pass
+    # its signature and archive checks.
+    if: ${{ always() && inputs.release && !cancelled() && !contains(needs.*.result, 'failure') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version from PrintessFlow.nsi
+        id: ver
+        run: |
+          version=$(grep -oP '^!define APP_VERSION\s+"\K[^"]+' packaging/printessflow/PrintessFlow.nsi)
+          if [ -z "$version" ]; then echo "could not read APP_VERSION"; exit 1; fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version"    >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+
+      - name: Download the built installers
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Show what will be attached
+        run: |
+          find dist -type f -printf '%p  (%s bytes)\n'
+          count=$(find dist -type f \( -name '*.exe' -o -name '*.dmg' \) | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "no installer artifacts were produced - refusing to publish an empty release"
+            exit 1
+          fi
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ steps.ver.outputs.tag }}"
+          files=$(find dist -type f \( -name '*.exe' -o -name '*.dmg' \))
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "release $tag exists - replacing its assets"
+            gh release upload "$tag" $files --clobber
+          else
+            gh release create "$tag" $files \
+              --title "PrintessFlow ${{ steps.ver.outputs.version }}" \
+              --target "${{ github.sha }}" \
+              --generate-notes
+          fi
+          gh release view "$tag" --json tagName,assets \
+            --jq '.tagName + " -> " + ([.assets[].name] | join(", "))'

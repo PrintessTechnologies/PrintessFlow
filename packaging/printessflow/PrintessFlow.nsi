@@ -4,16 +4,27 @@
 ; seeding the machine/profile config into %APPDATA%\cura\5.12 on first install.
 
 !define APP_NAME     "PrintessFlow"
-!define APP_VERSION  "1.0.1"
+!define APP_VERSION  "1.0.3"
 !define COMPANY      "Printess Technologies"
 !define MAIN_EXE     "PrintessFlow.exe"
 !define SRC_EXE      "UltiMaker-Cura.exe"   ; launcher name produced by PyInstaller
 !define DATA_SUBPATH "data\cura\5.12"        ; seeded as 5.12; Cura 5.14 upgrades it on first run
 
-; No admin rights required - installs into the user's LocalAppData folder
-RequestExecutionLevel user
+; Per-machine install into Program Files, which needs elevation.
+;
+; This used to be `user` + $LOCALAPPDATA, deliberately, to avoid a UAC prompt.
+; That combination is also the reason CrowdStrike terminated the app on a user's
+; machine with "malicious behavior was detected": an installer that drops an
+; UNSIGNED executable into a user-writable directory and then runs it is the
+; canonical dropper sequence, and %LOCALAPPDATA% is where malware installs
+; precisely because it needs no elevation. Running from Program Files, which is
+; not user-writable, removes the strongest signal in that chain.
+;
+; Cost: one UAC prompt at install. Worth it for an app whose users are on
+; managed institutional machines running EDR.
+RequestExecutionLevel admin
 
-VIProductVersion "1.0.1.0"
+VIProductVersion "1.0.3.0"
 VIAddVersionKey "ProductName"     "${APP_NAME}"
 VIAddVersionKey "CompanyName"     "${COMPANY}"
 VIAddVersionKey "LegalCopyright"  "Copyright (c) 2026 ${COMPANY}. Based on UltiMaker Cura (LGPLv3) and CuraEngine (AGPLv3)."
@@ -23,8 +34,12 @@ VIAddVersionKey "ProductVersion"  "${APP_VERSION}"
 
 Name          "${APP_NAME}"
 OutFile       "PrintessFlow-Setup.exe"
-InstallDir    "$LOCALAPPDATA\${APP_NAME}"
-InstallDirRegKey HKCU "Software\${APP_NAME}" "InstallDir"
+InstallDir    "$PROGRAMFILES64\${APP_NAME}"
+; InstallDirRegKey is deliberately NOT used. It OVERRIDES InstallDir whenever the
+; stored key exists, so every existing user - all of whom have
+; "$LOCALAPPDATA\PrintessFlow" recorded from a previous install - would be sent
+; straight back to the directory this change exists to move them out of. The new
+; default has to win, so the old location is read only to clean it up (below).
 
 SetCompressor /SOLID lzma
 
@@ -45,10 +60,13 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 
-!define MUI_FINISHPAGE_TEXT     "PrintessFlow has been installed on your computer.$\r$\n$\r$\nNote: the first launch may take a few minutes while Windows scans the application files (it may sit on $\"Loading Machines$\" briefly). Subsequent launches are much faster."
-!define MUI_FINISHPAGE_RUN
-!define MUI_FINISHPAGE_RUN_TEXT "Launch PrintessFlow now"
-!define MUI_FINISHPAGE_RUN_FUNCTION "LaunchApp"
+; No MUI_FINISHPAGE_RUN. The installer no longer launches the app it just wrote.
+; "Process writes an executable and immediately executes it" is a behavioral
+; pattern EDRs weight heavily on its own, and it is the second half of the chain
+; described at RequestExecutionLevel above. Users start PrintessFlow from the
+; desktop or Start-menu shortcut instead, which is an ordinary user-initiated
+; launch with no dropper adjacency.
+!define MUI_FINISHPAGE_TEXT     "PrintessFlow has been installed on your computer.$\r$\n$\r$\nUse the PrintessFlow shortcut on your desktop or in the Start menu to launch it.$\r$\n$\r$\nNote: the first launch may take a few minutes while Windows scans the application files (it may sit on $\"Loading Machines$\" briefly). Subsequent launches are much faster."
 !insertmacro MUI_PAGE_FINISH
 
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -59,6 +77,20 @@ SetCompressor /SOLID lzma
 ; -----------------------------------------------------------------------
 Section "PrintessFlow" SEC_MAIN
     SectionIn RO
+
+    ; --- Migrate away from the old %LOCALAPPDATA% install ---
+    ;     Every user installed before this version has a copy in
+    ;     $LOCALAPPDATA\PrintessFlow. Leaving it there would defeat the point:
+    ;     the old unsigned binary would still be sitting in a user-writable
+    ;     directory, still launchable from a stale shortcut, and still liable to
+    ;     be terminated. Guarded so it can never delete the directory we are
+    ;     about to install into, however the user redirects it on the Directory
+    ;     page. User config lives in %APPDATA%\cura and is untouched.
+    StrCmp "$INSTDIR" "$LOCALAPPDATA\${APP_NAME}" skip_migrate 0
+        IfFileExists "$LOCALAPPDATA\${APP_NAME}\*.*" 0 skip_migrate
+            DetailPrint "Removing the previous installation from $LOCALAPPDATA\${APP_NAME}"
+            RMDir /r "$LOCALAPPDATA\${APP_NAME}"
+    skip_migrate:
 
     ; --- Application binary (CI build payload, staged into .\app) ---
     ; Wipe any prior install first so files removed or renamed between versions
@@ -132,27 +164,40 @@ Section "PrintessFlow" SEC_MAIN
     CreateShortcut "$SMPROGRAMS\${APP_NAME}.lnk" "$INSTDIR\${MAIN_EXE}" "" "$INSTDIR\${MAIN_EXE}" 0
 
     ; --- Add/Remove Programs registry entries ---
-    WriteRegStr   HKCU "Software\${APP_NAME}" "InstallDir" "$INSTDIR"
-    WriteRegStr   HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "DisplayName"          "${APP_NAME}"
-    WriteRegStr   HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "UninstallString"      '"$INSTDIR\Uninstall.exe"'
-    WriteRegStr   HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
-    WriteRegStr   HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "DisplayIcon"          "$INSTDIR\${MAIN_EXE}"
-    WriteRegStr   HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "Publisher"            "${COMPANY}"
-    WriteRegStr   HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "DisplayVersion"       "${APP_VERSION}"
-    WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "NoModify" 1
-    WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "NoRepair" 1
+    ;     HKLM, not HKCU, now that this is a per-machine install in Program
+    ;     Files. An elevated installer writes HKCU into the hive of whoever
+    ;     answered the UAC prompt, so on a managed machine, where that is an IT
+    ;     admin rather than the person at the keyboard, the entry would land in
+    ;     the wrong profile and the actual user would have an app they could not
+    ;     uninstall. SetRegView 64 keeps this out of the WOW6432Node redirect.
+    SetRegView 64
+    DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
+    DeleteRegKey HKCU "Software\${APP_NAME}"
+    WriteRegStr   HKLM "Software\${APP_NAME}" "InstallDir" "$INSTDIR"
+    WriteRegStr   HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "DisplayName"          "${APP_NAME}"
+    WriteRegStr   HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "UninstallString"      '"$INSTDIR\Uninstall.exe"'
+    WriteRegStr   HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
+    WriteRegStr   HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "DisplayIcon"          "$INSTDIR\${MAIN_EXE}"
+    WriteRegStr   HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "Publisher"            "${COMPANY}"
+    WriteRegStr   HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "DisplayVersion"       "${APP_VERSION}"
+    WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "NoModify" 1
+    WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}" "NoRepair" 1
 
     WriteUninstaller "$INSTDIR\Uninstall.exe"
 SectionEnd
 
-Function LaunchApp
-    Exec '"$INSTDIR\${MAIN_EXE}"'
-FunctionEnd
+; LaunchApp is gone along with MUI_FINISHPAGE_RUN. Do not reintroduce it without
+; re-reading the note at RequestExecutionLevel: dropping an executable and then
+; running it is half of what got the app terminated.
 
 Section "Uninstall"
+    SetRegView 64
     RMDir /r "$INSTDIR"
     Delete "$DESKTOP\${APP_NAME}.lnk"
     Delete "$SMPROGRAMS\${APP_NAME}.lnk"
+    DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
+    DeleteRegKey HKLM "Software\${APP_NAME}"
+    ; Left over from installs before the move to Program Files.
     DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_NAME}"
     DeleteRegKey HKCU "Software\${APP_NAME}"
 SectionEnd

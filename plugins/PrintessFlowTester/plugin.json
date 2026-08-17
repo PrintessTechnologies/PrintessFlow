@@ -1,0 +1,7 @@
+{
+    "name": "Printess Flow Rate Tester",
+    "author": "Printess Technologies",
+    "version": "1.0.0",
+    "description": "Print a strip of test lines, one per flow rate, to find the right flow for a material and dispense tip without slicing.",
+    "api": 8
+}

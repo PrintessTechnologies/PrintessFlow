@@ -13,10 +13,20 @@ Item
     implicitHeight: UM.Theme.getSize("button").height
     implicitWidth:  btnRow.implicitWidth + UM.Theme.getSize("default_margin").width * 2
 
-    // Layout constants used by popup content
-    readonly property int  panelW:   220
+    // Layout constants used by popup content.
+    // Hardcoded pixel numbers go through px(). Theme sizes (UM.Theme.getSize)
+    // are already scaled for the display and rounded to a whole pixel by
+    // Theme.py; bare numbers are not, so at 150% display scaling the fonts grew
+    // by half and this popup did not, and the preset labels were being sliced
+    // mid-letter by the clip on their Text.
+    function px(n) { return Math.round(n * screenScaleFactor) }
+
+    readonly property int  panelW:   base.px(220)
     readonly property real halfGap:  Math.round(UM.Theme.getSize("default_margin").width / 2)
-    readonly property real ctrlH:    UM.Theme.getSize("setting_control").height
+    // int, not real. UM.Label renders NATIVELY on Windows (see UM/Label.qml),
+    // and a glyph whose baseline lands on a half pixel is hinted against the
+    // wrong grid, which reads as bent letters rather than merely soft ones.
+    readonly property int  ctrlH:    Math.round(UM.Theme.getSize("setting_control").height)
     readonly property real ctrlW:    UM.Theme.getSize("setting_control").width
     readonly property real presetBW: Math.floor((panelW - halfGap * 2) / 3)
 
@@ -51,6 +61,7 @@ Item
 
             UM.Label
             {
+                renderType: Text.QtRendering
                 id: btnLabel
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Well Plate Arranger"
@@ -105,6 +116,7 @@ Item
 
                 UM.Label
                 {
+                    renderType: Text.QtRendering
                     id: clearanceLabel
                     anchors
                     {
@@ -127,6 +139,7 @@ Item
 
                 UM.Label
                 {
+                    renderType: Text.QtRendering
                     text: "Well Plate Preset"
                     font: UM.Theme.getFont("default_bold")
                 }
@@ -160,6 +173,7 @@ Item
 
                 UM.Label
                 {
+                    renderType: Text.QtRendering
                     text: "Grid Configuration"
                     font: UM.Theme.getFont("default_bold")
                 }
@@ -170,7 +184,7 @@ Item
                     columnSpacing: UM.Theme.getSize("default_margin").width
                     rowSpacing: base.halfGap
 
-                    UM.Label { text: "Rows";      height: base.ctrlH; verticalAlignment: Text.AlignVCenter }
+                    UM.Label { renderType: Text.QtRendering; text: "Rows";      height: base.ctrlH; verticalAlignment: Text.AlignVCenter }
                     UM.TextFieldWithUnit
                     {
                         id: rowsField
@@ -186,7 +200,7 @@ Item
                         }
                     }
 
-                    UM.Label { text: "Columns";   height: base.ctrlH; verticalAlignment: Text.AlignVCenter }
+                    UM.Label { renderType: Text.QtRendering; text: "Columns";   height: base.ctrlH; verticalAlignment: Text.AlignVCenter }
                     UM.TextFieldWithUnit
                     {
                         id: colsField
@@ -201,7 +215,7 @@ Item
                         }
                     }
 
-                    UM.Label { text: "X Spacing"; height: base.ctrlH; verticalAlignment: Text.AlignVCenter }
+                    UM.Label { renderType: Text.QtRendering; text: "X Spacing"; height: base.ctrlH; verticalAlignment: Text.AlignVCenter }
                     UM.TextFieldWithUnit
                     {
                         id: spacingXField
@@ -216,7 +230,7 @@ Item
                         }
                     }
 
-                    UM.Label { text: "Y Spacing"; height: base.ctrlH; verticalAlignment: Text.AlignVCenter }
+                    UM.Label { renderType: Text.QtRendering; text: "Y Spacing"; height: base.ctrlH; verticalAlignment: Text.AlignVCenter }
                     UM.TextFieldWithUnit
                     {
                         id: spacingYField
@@ -247,6 +261,7 @@ Item
 
                 UM.Label
                 {
+                    renderType: Text.QtRendering
                     id: overflowLabel
                     anchors
                     {
@@ -310,9 +325,12 @@ Item
                 color: sel
                     ? UM.Theme.getColor("primary_button_text")
                     : UM.Theme.getColor("text")
-                clip: true
-                leftPadding:  4
-                rightPadding: 4
+                // Elide rather than clip. Clipping cuts the label off in the
+                // middle of a letter, which reads as a broken glyph rather than
+                // as a button that is too small; an ellipsis says which it is.
+                elide: Text.ElideRight
+                leftPadding:  base.px(4)
+                rightPadding: base.px(4)
             }
 
             background: Rectangle

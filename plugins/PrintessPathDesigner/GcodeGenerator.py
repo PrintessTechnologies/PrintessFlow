@@ -31,13 +31,14 @@ def generate(paths: List[dict], settings: dict) -> List[str]:
     :param paths: list of path dicts with keys: points (scene (x, z) tuples,
                   closed polygons do not repeat the first point), closed,
                   fill_segments, extruder, layers (how many passes to stack),
-                  line_width, speed (mm/s, 0 = profile), flow (%, multiplies
-                  the profile flow).
+                  line_width, speed (mm/s, 0 = profile). path["flow"] is
+                  present in the dict and stored in projects, but is NOT read;
+                  see e_per_mm.
     :param settings: dict with machine_width, machine_depth, layer_height,
                      layer_height_0 and per-extruder dicts under "extruders":
-                     {index: {wall_speed, speed_travel, wall_flow, initial_flow,
-                              initial_line_width_factor, initial_speed,
-                              slowdown_layers, material_diameter,
+                     {index: {print_speed, speed_travel, material_flow,
+                              initial_flow, initial_line_width_factor,
+                              initial_speed, slowdown_layers, material_diameter,
                               nozzle_offset_x, nozzle_offset_y}}.
                      initial_flow and initial_line_width_factor are percentages
                      that apply to LAYER 0 ONLY, matching CuraEngine.
@@ -45,22 +46,25 @@ def generate(paths: List[dict], settings: dict) -> List[str]:
                      slowdown_layers (speed_slowdown_layers) drive the ramp back
                      up to full speed over the first layers; see
                      print_speed_for.
-                     wall_speed and wall_flow are both read off the OUTER WALL,
-                     not off speed_print and material_flow, and deliberately as a
-                     pair: a drawn line is the equivalent of an outer wall, so
-                     taking its flow from the wall and its speed from the general
-                     print speed described it as two different things. Nothing
-                     showed while a profile gave both the same number, and a
-                     profile that set an outer-wall speed of its own would have
-                     drawn the line at a rate its flow was not computed for.
-                     wall_flow is the RESOLVED wall_0_material_flow, not plain
-                     material_flow: a drawn line is the equivalent of an outer
-                     wall, and Cura derives wall_0_material_flow from
-                     wall_material_flow from material_flow, so reading the wall
-                     value still follows a change to the plain Flow setting
-                     while also picking up a wall-specific override that
-                     material_flow alone would miss. Read it fresh at slice
-                     time so changing a setting and re-slicing is enough.
+                     print_speed and material_flow are both read off the GENERAL
+                     settings (speed_print, material_flow), and deliberately as a
+                     PAIR: reading one from the outer wall and the other from the
+                     general level would describe the same line as two different
+                     features, which is the mistake this pairing exists to
+                     prevent whichever level it is anchored at.
+                     They were on the OUTER WALL (speed_wall_0,
+                     wall_0_material_flow) until 2026-08-17, on the reasoning
+                     that a drawn line is the equivalent of an outer wall. Moved
+                     at the user's request to match the Flow Rate Tester: an
+                     unfilled drawn path never reaches CuraEngine, so "it is a
+                     wall" was a convention rather than a fact, and Flow is the
+                     knob a user actually tunes. Behavior-neutral on every
+                     current profile, since none sets a wall-specific value.
+                     Note that a FILLED drawn shape is unaffected - it is a mesh,
+                     CuraEngine slices it, and its perimeter genuinely is an
+                     outer wall printed with the wall settings.
+                     Read fresh at slice time so changing a setting and
+                     re-slicing is enough.
     :return: list of g-code chunks (each ends with a newline), in the same
              shape Cura hands to post-processing scripts.
     """
@@ -71,7 +75,7 @@ def generate(paths: List[dict], settings: dict) -> List[str]:
     extruders: Dict[int, dict] = settings["extruders"]
 
     def to_printer(point, extruder):
-        # Scene (centre origin, +z toward the front) -> printer (corner origin),
+        # Scene (center origin, +z toward the front) -> printer (corner origin),
         # then subtract the nozzle offset like CuraEngine's getGcodePos().
         ex = extruders[extruder]
         gx = (point[0] + half_w) - ex["nozzle_offset_x"]
@@ -89,7 +93,36 @@ def generate(paths: List[dict], settings: dict) -> List[str]:
 
     def e_per_mm(path, layer, layer_thickness):
         ex = extruders[path["extruder"]]
-        flow = (ex["wall_flow"] / 100.0) * (path["flow"] / 100.0)
+        # The profile's outer-wall flow, and nothing else.
+        #
+        # This used to be `wall_flow * path["flow"]`, a per-path MULTIPLIER.
+        # Nothing has ever set path["flow"] to anything but 100 (FlowPercent is
+        # not in setExposedProperties, so QML cannot reach the setter and the
+        # panel offers no field), so the product has always equalled wall_flow
+        # and no print is affected by dropping it. It is dropped because the
+        # multiplier convention is a trap:
+        #
+        #   - Cura's own per-object settings REPLACE, they do not scale. A mesh
+        #     carrying wall_0_material_flow = 110 prints at 110, not at 110% of
+        #     the global.
+        #   - `speed` in this very dict already replaces (0 means "use the
+        #     profile"), so the two overrides read the same and behaved
+        #     differently.
+        #   - The Flow Rate Tester shipped with exactly this multiply and it was
+        #     wrong there for a concrete reason: a user on Flow 90 who picks the
+        #     line labeled 110 has actually printed 99, and typing 110 back
+        #     into Flow gives them something they never saw.
+        #
+        # IF A PER-PATH FLOW FIELD IS EVER ADDED, IT MUST REPLACE, NOT MULTIPLY:
+        # `flow = path["flow"] if path["flow"] > 0 else ex["material_flow"]`,
+        # with 0 as the "use the profile" sentinel, mirroring speed exactly.
+        #
+        # Note for whoever does that: "flow" is in _SNAPSHOT_KEYS, so projects
+        # already on disk carry "flow": 100.0. Under replace semantics that
+        # stored 100 would read as a deliberate absolute 100% and would override
+        # a profile set to anything else. Those records mean "unset" and have to
+        # be migrated to the sentinel on restore, not taken at face value.
+        flow = ex["material_flow"] / 100.0
         line_width = path["line_width"]
         if layer == 0:
             # Initial Layer Flow and Initial Layer Line Width, both of which
@@ -122,7 +155,7 @@ def generate(paths: List[dict], settings: dict) -> List[str]:
         1 mm/s therefore still has its first layers pulled toward the initial
         layer speed, and the way to opt out is to set speed_slowdown_layers to 0.
         """
-        speed = path["speed"] if path["speed"] > 0 else ex["wall_speed"]
+        speed = path["speed"] if path["speed"] > 0 else ex["print_speed"]
         slowdown = int(ex["slowdown_layers"])
         if layer < slowdown:
             speed = (speed * layer + ex["initial_speed"] * (slowdown - layer)) / slowdown
@@ -241,7 +274,7 @@ def generate(paths: List[dict], settings: dict) -> List[str]:
                     lines.append("G1 F{0} X{1:.3f} Y{2:.3f} E{3:.5f}".format(
                         print_f, gbx, gby, seg_len * epmm))
 
-        # Close the mesh context, exactly as CuraEngine does before travelling
+        # Close the mesh context, exactly as CuraEngine does before traveling
         # away from a mesh. Without it the NEXT layer's leading comments, which
         # come before its own ;MESH: marker, are still attributed to this part:
         # a one-layer drawing picked up a ;TYPE:FILL from the layer above it and

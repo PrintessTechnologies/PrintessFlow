@@ -17,11 +17,22 @@ Item
     width: scroller.width
     height: scroller.height
 
+    // Every hardcoded pixel number in this file goes through px(). Theme sizes
+    // (UM.Theme.getSize) are already scaled for the display and rounded to a
+    // whole pixel by Theme.py; bare numbers are not, so on a 150% display the
+    // fonts grew by half and the panel, its columns and its fields did not.
+    // The result is a panel a third too narrow for the text written into it,
+    // which is what makes labels look cramped and half-formed.
+    //
+    // screenScaleFactor never changes during a session, so a function is safe
+    // here even though its result is not a reactive binding.
+    function px(n) { return Math.round(n * screenScaleFactor) }
+
     // Cap the panel so its bottom edge always stays inside the window; the
     // content scrolls inside instead. The cap is measured from where the panel
     // actually sits (the toolbar anchors it vertically), because a fixed
     // fraction of the window height overflows on short screens.
-    property real maxPanelHeight: 420
+    property real maxPanelHeight: base.px(420)
 
     function recalcMaxHeight()
     {
@@ -39,7 +50,9 @@ Item
             }
         }
         // Leave a margin below so the last row clears the window edge.
-        base.maxPanelHeight = Math.max(240, Window.height - top - 32)
+        // Window.height and the mapped top are already in device pixels, so it
+        // is only the two constants that need scaling.
+        base.maxPanelHeight = Math.max(base.px(240), Window.height - top - base.px(32))
     }
 
     Component.onCompleted: recalcMaxHeight()
@@ -86,15 +99,21 @@ Item
         }
     }
 
-    readonly property int  panelWidth: 240
+    readonly property int  panelWidth: base.px(240)
     readonly property real halfMargin: Math.round(UM.Theme.getSize("default_margin").width / 2)
     readonly property real sectionSpacing: UM.Theme.getSize("default_margin").height
-    readonly property real controlHeight: UM.Theme.getSize("setting_control").height
+    // int, not real: this is arithmetic'd into row heights below, and UM.Label
+    // renders NATIVELY on Windows (see UM/Label.qml). A glyph whose baseline
+    // lands on a half pixel is hinted against the wrong grid, which reads as
+    // bent letters rather than merely soft ones.
+    readonly property int  controlHeight: Math.round(UM.Theme.getSize("setting_control").height)
+    // The coloured extruder/path dot, and the gaps around it.
+    readonly property int  dotSize: base.px(10)
 
     Flickable
     {
         id: scroller
-        width: base.panelWidth + 12  // room for the scrollbar
+        width: base.panelWidth + base.px(12)  // room for the scrollbar
         height: Math.min(contentCol.height, base.maxPanelHeight)
         contentWidth: base.panelWidth
         contentHeight: contentCol.height
@@ -113,7 +132,7 @@ Item
         spacing: base.halfMargin
 
         // -- Shape ---------------------------------------------------------
-        UM.Label { text: "Tool"; font: UM.Theme.getFont("default_bold") }
+        UM.Label { renderType: Text.QtRendering; text: "Tool"; font: UM.Theme.getFont("default_bold") }
 
         Grid
         {
@@ -142,6 +161,11 @@ Item
                         verticalAlignment: Text.AlignVCenter
                         font: UM.Theme.getFont("default")
                         color: sel ? UM.Theme.getColor("primary_button_text") : UM.Theme.getColor("text")
+                        // "Rectangle" is the longest label and the one that runs
+                        // out of button first. Eliding says so honestly rather
+                        // than letting the button edge slice the last letters,
+                        // which is indistinguishable from a broken glyph.
+                        elide: Text.ElideRight
                     }
                     background: Rectangle
                     {
@@ -160,6 +184,7 @@ Item
         // -- Extruder ------------------------------------------------------
         UM.Label
         {
+            renderType: Text.QtRendering
             text: base.selectedIndex >= 0 ? "Extruder (selection)" : "Extruder"
             font: UM.Theme.getFont("default_bold")
             topPadding: base.halfMargin
@@ -178,15 +203,16 @@ Item
                     implicitHeight: base.controlHeight
                     contentItem: Row
                     {
-                        spacing: 6
-                        leftPadding: 8
+                        spacing: base.px(6)
+                        leftPadding: base.px(8)
                         Rectangle
                         {
-                            width: 10; height: 10; radius: 5
+                            width: base.dotSize; height: base.dotSize
+                            radius: base.dotSize / 2
                             anchors.verticalCenter: parent.verticalCenter
                             color: base.extruderColors[modelData] !== undefined ? base.extruderColors[modelData] : "#888888"
                             border.color: UM.Theme.getColor("lining")
-                            border.width: 1
+                            border.width: UM.Theme.getSize("default_lining").width
                         }
                         Text
                         {
@@ -194,6 +220,7 @@ Item
                             font: UM.Theme.getFont("default")
                             color: sel ? UM.Theme.getColor("primary_button_text") : UM.Theme.getColor("text")
                             anchors.verticalCenter: parent.verticalCenter
+                            elide: Text.ElideRight
                         }
                     }
                     background: Rectangle
@@ -213,6 +240,7 @@ Item
         // -- Path settings -------------------------------------------------
         UM.Label
         {
+            renderType: Text.QtRendering
             text: base.selectedIndex >= 0 ? "Path Settings (selection)" : "Path Settings"
             font: UM.Theme.getFont("default_bold")
             topPadding: base.halfMargin
@@ -224,11 +252,11 @@ Item
             columnSpacing: base.sectionSpacing
             rowSpacing: Math.round(base.halfMargin / 2)
 
-            UM.Label { text: "Layers"; height: base.controlHeight; verticalAlignment: Text.AlignVCenter }
+            UM.Label { renderType: Text.QtRendering; text: "Layers"; height: base.controlHeight; verticalAlignment: Text.AlignVCenter }
             UM.TextFieldWithUnit
             {
                 id: layersField
-                width: 104; height: base.controlHeight
+                width: base.px(104); height: base.controlHeight
                 unit: ""
                 validator: IntValidator { bottom: 1; top: 9999 }
                 onEditingFinished:
@@ -239,22 +267,33 @@ Item
             }
 
             // Read-only: comes from the dispense tip profile, not editable here.
-            UM.Label { text: "Line width"; height: base.controlHeight; verticalAlignment: Text.AlignVCenter }
+            UM.Label { renderType: Text.QtRendering; text: "Line width"; height: base.controlHeight; verticalAlignment: Text.AlignVCenter }
             UM.Label
             {
-                width: 104; height: base.controlHeight
+                renderType: Text.QtRendering
+                width: base.px(104); height: base.controlHeight
                 verticalAlignment: Text.AlignVCenter
                 text: base.lineWidthText
-                color: UM.Theme.getColor("text_detail")
+                // NOT text_detail. That theme colour carries alpha 128 in the
+                // light theme and 172 in the dark one, so it composites to
+                // roughly 1.3:1 contrast on white, and no stock Cura QML uses
+                // it for text. The alpha also DEFORMS the letters: UM.Label
+                // renders natively on Windows and the native rasteriser
+                // antialiases a part-transparent glyph badly, dropping strokes
+                // unevenly. Secondary text here is demoted by SIZE instead.
+                color: UM.Theme.getColor("text")
+                wrapMode: Text.NoWrap
+                elide: Text.ElideRight
             }
         }
 
         UM.Label
         {
+            renderType: Text.QtRendering
             text: "The drawing is printed this many layers tall; each layer's height, "
                 + "the line width, speed, flow, and fill density all come from your print settings."
             font: UM.Theme.getFont("small")
-            color: UM.Theme.getColor("text_detail")
+            color: UM.Theme.getColor("text")
             width: parent.width
             wrapMode: Text.WordWrap
         }
@@ -284,6 +323,7 @@ Item
         // -- Well plate replication ----------------------------------------
         UM.Label
         {
+            renderType: Text.QtRendering
             text: "Well Plate"
             font: UM.Theme.getFont("default_bold")
             topPadding: base.halfMargin
@@ -311,6 +351,9 @@ Item
                         verticalAlignment: Text.AlignVCenter
                         font: UM.Theme.getFont("default")
                         color: sel ? UM.Theme.getColor("primary_button_text") : UM.Theme.getColor("text")
+                        // Five buttons across a 240pt panel leaves very little
+                        // per button, and "None" is the one that fills it.
+                        elide: Text.ElideRight
                     }
                     background: Rectangle
                     {
@@ -330,9 +373,9 @@ Item
         {
             visible: base.wellCols > 0
             columns: Math.max(base.wellCols, 1)
-            columnSpacing: 3
-            rowSpacing: 3
-            property int cell: Math.min(20, Math.floor((base.panelWidth - (base.wellCols - 1) * 3) / Math.max(base.wellCols, 1)))
+            columnSpacing: base.px(3)
+            rowSpacing: base.px(3)
+            property int cell: Math.min(base.px(20), Math.floor((base.panelWidth - (base.wellCols - 1) * base.px(3)) / Math.max(base.wellCols, 1)))
             Repeater
             {
                 model: base.wellInfo
@@ -345,7 +388,7 @@ Item
                          : (modelData.selected ? UM.Theme.getColor("primary_button")
                                                : UM.Theme.getColor("main_background"))
                     border.color: UM.Theme.getColor("lining")
-                    border.width: 1
+                    border.width: UM.Theme.getSize("default_lining").width
 
                     Text
                     {
@@ -386,10 +429,11 @@ Item
 
         UM.Label
         {
+            renderType: Text.QtRendering
             visible: base.wellCols > 0
             text: "Green S = the well you drew in (always printed). Click wells to give them a copy (blue)."
             font: UM.Theme.getFont("small")
-            color: UM.Theme.getColor("text_detail")
+            color: UM.Theme.getColor("text")
             width: parent.width
             wrapMode: Text.WordWrap
         }
@@ -397,6 +441,7 @@ Item
         // -- Path list -----------------------------------------------------
         UM.Label
         {
+            renderType: Text.QtRendering
             text: "Paths (" + base.pathsInfo.length + ")"
             font: UM.Theme.getFont("default_bold")
             topPadding: base.halfMargin
@@ -406,7 +451,7 @@ Item
         Flickable
         {
             width: parent.width
-            height: Math.min(listCol.height, 110)
+            height: Math.min(listCol.height, base.px(110))
             contentHeight: listCol.height
             clip: true
             visible: base.pathsInfo.length > 0
@@ -429,18 +474,32 @@ Item
 
                         Row
                         {
-                            spacing: 6
-                            leftPadding: 4
+                            spacing: base.px(6)
+                            leftPadding: base.px(4)
                             anchors.verticalCenter: parent.verticalCenter
                             Rectangle
                             {
-                                width: 10; height: 10; radius: 5
+                                width: base.dotSize; height: base.dotSize
+                                radius: base.dotSize / 2
                                 anchors.verticalCenter: parent.verticalCenter
                                 color: modelData.color
                                 border.color: UM.Theme.getColor("lining")
-                                border.width: 1
+                                border.width: UM.Theme.getSize("default_lining").width
                             }
-                            UM.Label { text: (modelData.index + 1) + ". " + modelData.label }
+                            // Bounded and elided. Without a width UM.Label takes
+                            // its implicit one and a long path label simply runs
+                            // off the panel; with a width it would WRAP (that is
+                            // UM.Label's default) into a row only one line tall,
+                            // showing the top of one line over the bottom of the
+                            // next, which reads as broken letters.
+                            UM.Label
+                            {
+                                renderType: Text.QtRendering
+                                width: listCol.width - base.dotSize - base.px(6) - base.px(4)
+                                text: (modelData.index + 1) + ". " + modelData.label
+                                wrapMode: Text.NoWrap
+                                elide: Text.ElideRight
+                            }
                         }
 
                         MouseArea
@@ -521,6 +580,7 @@ Item
         // -- Totals readout ------------------------------------------------
         UM.Label
         {
+            renderType: Text.QtRendering
             visible: base.totalsText !== ""
             text: base.totalsText
             font: UM.Theme.getFont("default_bold")
@@ -548,17 +608,19 @@ Item
         // -- Status / hints ------------------------------------------------
         UM.Label
         {
+            renderType: Text.QtRendering
             text: base.statusText
             width: parent.width
             wrapMode: Text.WordWrap
-            color: UM.Theme.getColor("text_detail")
+            color: UM.Theme.getColor("text")
         }
 
         UM.Label
         {
+            renderType: Text.QtRendering
             text: "Right-drag rotates the view."
             font: UM.Theme.getFont("small")
-            color: UM.Theme.getColor("text_detail")
+            color: UM.Theme.getColor("text")
             width: parent.width
             wrapMode: Text.WordWrap
         }
@@ -623,13 +685,14 @@ Item
     {
         id: exitDialog
         title: "Path Designer"
-        width: 400
-        height: 180
-        minimumWidth: 400
-        minimumHeight: 180
+        width: base.px(400)
+        height: base.px(180)
+        minimumWidth: base.px(400)
+        minimumHeight: base.px(180)
 
         UM.Label
         {
+            renderType: Text.QtRendering
             anchors.fill: parent
             wrapMode: Text.WordWrap
             text: "You have changes that are not on the build plate yet.

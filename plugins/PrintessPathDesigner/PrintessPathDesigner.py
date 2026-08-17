@@ -2066,6 +2066,15 @@ class PrintessPathDesigner(Tool):
             self._speed_override = value
         self._emitChanged()
 
+    # NOT WIRED TO ANYTHING. "FlowPercent" is absent from setExposedProperties
+    # and no QML references it, so neither of these is reachable and every path
+    # carries flow = 100. GcodeGenerator.e_per_mm deliberately ignores the value
+    # and prints at the profile's outer-wall flow.
+    #
+    # Before exposing this, read the contract note in GcodeGenerator.e_per_mm:
+    # a per-path flow has to REPLACE the profile flow with 0 as the "use the
+    # profile" sentinel, the way speed does, and projects already on disk store
+    # flow = 100 meaning "unset", which needs migrating rather than believing.
     def getFlowPercent(self) -> float:
         path = self._selectedPath()
         return path["flow"] if path else self._flow_percent
@@ -3093,14 +3102,29 @@ class PrintessPathDesigner(Tool):
         }
         for index in range(len(stack.extruderList)):
             settings["extruders"][index] = {
-                # Speed and flow both off the OUTER WALL, as a pair: a drawn line
-                # is an outer wall, and Cura derives each of these from the
-                # general setting above it, so reading one from the wall and the
-                # other from speed_print/material_flow described the same line as
-                # two different things.
-                "wall_speed": self._extruderProperty(index, "speed_wall_0", 4.0),
+                # Speed and flow both GENERAL, as a pair: speed_print and
+                # material_flow, not speed_wall_0 and wall_0_material_flow.
+                #
+                # Changed 2026-08-17 at the user's request, to match the Flow
+                # Rate Tester. An UNFILLED drawn path bypasses CuraEngine
+                # entirely, so calling it an outer wall was a convention rather
+                # than a fact, and the number a user tunes with the tester is
+                # material_flow. Reading them as a pair still matters: one from
+                # the wall and one from the general setting would describe the
+                # same line as two different features.
+                #
+                # Behaviour-neutral on every current profile - nothing sets
+                # wall_0_material_flow or speed_wall_0 except as `=speed_print` -
+                # and it also brings the g-code into line with getTotalsText,
+                # which was already estimating volume from material_flow.
+                #
+                # NOTE the asymmetry this leaves, and it is deliberate: a FILLED
+                # drawn shape is a mesh sliced by CuraEngine, so its perimeter
+                # really is an outer wall and really does use the wall settings.
+                # Only unfilled paths are generated here.
+                "print_speed": self._extruderProperty(index, "speed_print", 4.0),
                 "speed_travel": self._extruderProperty(index, "speed_travel", 4.0),
-                "wall_flow": self._extruderProperty(index, "wall_0_material_flow", 100.0),
+                "material_flow": self._extruderProperty(index, "material_flow", 100.0),
                 # First layer only, exactly as CuraEngine applies them. Read
                 # through the extruder stack even though Initial Layer Flow is a
                 # per-mesh setting rather than a per-extruder one: an extruder

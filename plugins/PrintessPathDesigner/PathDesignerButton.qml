@@ -55,6 +55,7 @@ Item
 
             UM.Label
             {
+                renderType: Text.QtRendering
                 anchors.verticalCenter: parent.verticalCenter
                 text: "Draw Paths"
                 color: UM.Theme.getColor("primary_button_text")

@@ -36,10 +36,21 @@ Item
         onTriggered: base.objectCount = (UM.Controller.properties.getValue("ObjectCount") || 0) }
 
     // ── Layout constants ──────────────────────────────────────────────────────
-    readonly property int  panelWidth:    220
+    // Hardcoded pixel numbers go through px(). Theme sizes (UM.Theme.getSize)
+    // are already scaled for the display and rounded to a whole pixel by
+    // Theme.py; bare numbers are not, so on a 150% display the fonts grew by
+    // half and the panel did not. At 220 the three preset buttons are about 68
+    // px each, and "12-Well" needs all of that at 100% alone: at 150% it was
+    // being sliced by the clip below, mid-letter.
+    function px(n) { return Math.round(n * screenScaleFactor) }
+
+    readonly property int  panelWidth:    base.px(220)
     readonly property real halfMargin:    Math.round(UM.Theme.getSize("default_margin").width  / 2)
     readonly property real sectionSpacing: UM.Theme.getSize("default_margin").height
-    readonly property real controlHeight: UM.Theme.getSize("setting_control").height
+    // int, not real. UM.Label renders NATIVELY on Windows (see UM/Label.qml),
+    // and a glyph whose baseline lands on a half pixel is hinted against the
+    // wrong grid, which reads as bent letters rather than merely soft ones.
+    readonly property int  controlHeight: Math.round(UM.Theme.getSize("setting_control").height)
     readonly property real controlWidth:  UM.Theme.getSize("setting_control").width
 
     // Preset button fixed width: 3 across with half-margin gaps
@@ -60,6 +71,7 @@ Item
 
             UM.Label
             {
+                renderType: Text.QtRendering
                 text: "Well Plate Preset"
                 font: UM.Theme.getFont("default_bold")
             }
@@ -103,6 +115,7 @@ Item
 
             UM.Label
             {
+                renderType: Text.QtRendering
                 text: "Grid Configuration"
                 font: UM.Theme.getFont("default_bold")
             }
@@ -113,7 +126,7 @@ Item
                 columnSpacing: base.sectionSpacing
                 rowSpacing: base.halfMargin
 
-                UM.Label { text: "Rows";      height: base.controlHeight; verticalAlignment: Text.AlignVCenter }
+                UM.Label { renderType: Text.QtRendering; text: "Rows";      height: base.controlHeight; verticalAlignment: Text.AlignVCenter }
                 UM.TextFieldWithUnit
                 {
                     id: rowsField
@@ -127,7 +140,7 @@ Item
                     }
                 }
 
-                UM.Label { text: "Columns";   height: base.controlHeight; verticalAlignment: Text.AlignVCenter }
+                UM.Label { renderType: Text.QtRendering; text: "Columns";   height: base.controlHeight; verticalAlignment: Text.AlignVCenter }
                 UM.TextFieldWithUnit
                 {
                     id: colsField
@@ -141,7 +154,7 @@ Item
                     }
                 }
 
-                UM.Label { text: "X Spacing"; height: base.controlHeight; verticalAlignment: Text.AlignVCenter }
+                UM.Label { renderType: Text.QtRendering; text: "X Spacing"; height: base.controlHeight; verticalAlignment: Text.AlignVCenter }
                 UM.TextFieldWithUnit
                 {
                     id: spacingXField
@@ -155,7 +168,7 @@ Item
                     }
                 }
 
-                UM.Label { text: "Y Spacing"; height: base.controlHeight; verticalAlignment: Text.AlignVCenter }
+                UM.Label { renderType: Text.QtRendering; text: "Y Spacing"; height: base.controlHeight; verticalAlignment: Text.AlignVCenter }
                 UM.TextFieldWithUnit
                 {
                     id: spacingYField
@@ -184,6 +197,7 @@ Item
 
             UM.Label
             {
+                renderType: Text.QtRendering
                 id: warningLabel
                 anchors { left: parent.left; right: parent.right; verticalCenter: parent.verticalCenter
                           margins: base.halfMargin }
@@ -234,10 +248,12 @@ Item
                 color: sel
                     ? UM.Theme.getColor("primary_button_text")
                     : UM.Theme.getColor("text")
-                // Clip so text never bleeds into the border
-                clip: true
-                leftPadding:  4
-                rightPadding: 4
+                // Elide rather than clip. Clipping cuts the label off in the
+                // middle of a letter, which reads as a broken glyph rather than
+                // as a button that is too small; an ellipsis says which it is.
+                elide: Text.ElideRight
+                leftPadding:  base.px(4)
+                rightPadding: base.px(4)
             }
 
             background: Rectangle

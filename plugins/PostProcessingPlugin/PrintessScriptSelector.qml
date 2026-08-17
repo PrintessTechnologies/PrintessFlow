@@ -44,6 +44,7 @@ Rectangle
 
         UM.Label
         {
+            renderType: Text.QtRendering
             id: titleLabel
             anchors.centerIn: parent
             width: parent.width - 2 * UM.Theme.getSize("default_margin").width
@@ -74,6 +75,7 @@ Rectangle
             // Center the selected text inside the dropdown
             contentItem: UM.Label
             {
+                renderType: Text.QtRendering
                 anchors.fill: parent
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
@@ -157,6 +159,7 @@ Rectangle
 
             UM.Label
             {
+                renderType: Text.QtRendering
                 Layout.fillWidth: true
                 text: warning.isWarning
                     ? "Do not use “Layer by Layer” when printing in well-plates. The dispense tip nozzle will interfere with the well-plate walls."

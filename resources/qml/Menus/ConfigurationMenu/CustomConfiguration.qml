@@ -506,7 +506,9 @@ Item
         contentItem: Column
         {
             spacing: UM.Theme.getSize("default_margin").height
-            width: 320
+            // Scaled: bare numbers do not follow the display scaling that the
+            // fonts inside them do (see Theme.py, which rounds theme sizes).
+            width: Math.round(320 * screenScaleFactor)
 
             UM.Label
             {
@@ -537,7 +539,7 @@ Item
                 TextField
                 {
                     id: menuSyringeField
-                    width: 120
+                    width: Math.round(120 * screenScaleFactor)
                     placeholderText: "e.g. 3"
                     selectByMouse: true
                     validator: DoubleValidator
@@ -580,7 +582,7 @@ Item
                 TextField
                 {
                     id: menuDiameterField
-                    width: 120
+                    width: Math.round(120 * screenScaleFactor)
                     placeholderText: "e.g. 4.76"
                     selectByMouse: true
                     validator: DoubleValidator
