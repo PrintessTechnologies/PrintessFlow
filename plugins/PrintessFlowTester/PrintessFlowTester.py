@@ -145,8 +145,8 @@ class PrintessFlowTester(Extension, QObject):
         """Read a printess/home_* preference the way PrintessOneAtATime does.
 
         Missing means True there, and it has to mean True here too: a user who
-        has never touched the homing checkboxes gets homing on a real print, so
-        a test strip that quietly skipped it would crash the tip into the bed.
+        has never touched the homing checkbox gets XY homing on a real print, so
+        a test strip that quietly skipped it would run against a different datum.
         """
         try:
             value = Application.getInstance().getPreferences().getValue(key)
@@ -205,11 +205,8 @@ class PrintessFlowTester(Extension, QObject):
             "park_lift": self._globalProperty("printess_park_lift", FlowTestGenerator.PARK_LIFT),
 
             "home_xy": self._homingPreference("printess/home_xy"),
-            "home_za": self._homingPreference("printess/home_za"),
             "zero_offset_x": self._offsetPreference("printess/zero_offset_x"),
             "zero_offset_y": self._offsetPreference("printess/zero_offset_y"),
-            "zero_offset_z": self._offsetPreference("printess/zero_offset_z"),
-            "zero_offset_a": self._offsetPreference("printess/zero_offset_a"),
 
             "tip_name": self._activeTipName(),
         }

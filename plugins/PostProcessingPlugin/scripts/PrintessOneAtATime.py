@@ -24,18 +24,19 @@ catalog = i18nCatalog("cura")
 
 PARK_LIFT = 30.0  # absolute park height (mm) for the idle extruder; fallback if the setting is unreadable
 
-# Startup-datum constants (see _startup_datum). After the printer's custom G28, XY is
-# centred on the build plate and Z/A are hopped clear; these are the resulting positions in
-# the homed frame. The datum G92 declares the zero-offset origin relative to them without
-# moving, so the old datum feedrate / raise constants are no longer needed.
+# Startup-datum constants (see _startup_datum). Only XY is homed: after the printer's
+# custom G28 the plate is centered under the nozzle, and the datum G92 declares the
+# zero-offset origin relative to that without moving. Z and A are never homed, so they
+# have no machine-defined post-home position; the operator zeroes the axis of the extruder
+# they are using with a manual G92 before starting the print.
 PLATE_CENTER_X = 63.0   # mm from the X endstop: build-plate centre after G28
 PLATE_CENTER_Y = 42.0   # mm from the Y endstop: build-plate centre after G28
-G28_HOP        = 30.0   # mm: height G28 hops Z and A to after homing
 
-# Relative clearance lift emitted at the very top of the file, before homing, so the
-# nozzles rise off the bed first. Only the axis of an extruder that actually prints is
-# commanded (Z for extruder 0, A for extruder 1).
-STARTUP_CLEARANCE   = 35.0   # mm to raise
+# Clearance lift emitted at the very top of the file, before XY homes, so the nozzles
+# rise off the bed first. Absolute (G90) against the operator's manual Z/A zero, not a
+# relative delta. Only the axis of an extruder that actually prints is commanded
+# (Z for extruder 0, A for extruder 1).
+STARTUP_CLEARANCE   = 50.0   # mm: absolute height to raise the used carriage(s) to
 STARTUP_CLEARANCE_F = 200.0  # feedrate for that lift
 
 
@@ -401,11 +402,14 @@ class PrintessOneAtATime(Script):
         # ------------------------------------------------------------------
         result = [header]
 
-        # Startup: G28 homing + the zero-offset datum routine (see _startup_datum) replace
-        # the old full software zero (G92 X0 Y0 Z0 A0 B0 C0) and the raise-to-park_z hop.
-        # It homes, then declares the zero-offset origin with a single non-moving G92 at the
-        # known post-home position (XY centred, Z/A hopped); the first print move in
-        # _emit_part_start provides Z clearance, so no datum travel is emitted.
+        # Startup: the clearance lift + XY homing + zero-offset datum routine (see
+        # _startup_datum) replaces the old full software zero (G92 X0 Y0 Z0 A0 B0 C0) and
+        # the raise-to-park_z hop. It lifts only the syringe of an extruder that actually
+        # prints, homes XY, then declares the zero-offset origin with a single non-moving
+        # G92 at the known post-home position (XY centered). Z and A are neither homed nor
+        # declared: the operator zeroes the axis they are using by hand before printing.
+        # The first print move in _emit_part_start provides Z clearance, so no datum
+        # travel is emitted.
         _print_has_t0 = any(any(v['t0'] for v in ld.values()) for ld in part_layers.values())
         _print_has_t1 = any(any(v['t1'] for v in ld.values()) for ld in part_layers.values())
         result.append(
@@ -984,34 +988,38 @@ class PrintessOneAtATime(Script):
         return line
 
     def _startup_datum(self, has_t0, has_t1):
-        """Build the clearance lift + homing + zero-offset datum block.
+        """Build the clearance lift + XY homing + zero-offset datum block.
+
+        Z and A are never homed. The operator jogs the syringe of the extruder they
+        are using down to the print surface and zeroes that axis with a manual G92
+        before starting, so every Z/A coordinate in the file is absolute against that
+        operator datum. That is why the lift below is a plain absolute move rather
+        than the relative one it used to be.
 
         Order:
-            G91                              relative mode, for the lift only
-            G1 Z.. A.. F..                   raise the used carriage(s) clear of the bed
-                                             before homing. Only the axis of a tool that
-                                             actually prints is commanded: Z for extruder 0,
-                                             A for extruder 1 (T1's Z is renamed to A).
             G90                              absolute mode
-            G28 <homed axes>                 combined home; only the checkbox-enabled axes
-                                             (Z needs extruder 0, A needs extruder 1). The
-                                             printer's G28 then centres XY on the plate
-                                             (PLATE_CENTER_*) and hops Z/A clear (G28_HOP).
-            G92 X.. Y.. Z.. A.. B0 C0        declare the zero-offset origin at that post-home
-                                             position WITHOUT moving
+            G1 Z.. A.. F..                   raise the used carriage(s) to
+                                             STARTUP_CLEARANCE above the operator's zero,
+                                             clear of the bed before XY homes. Only the
+                                             axis of a tool that actually prints is
+                                             commanded: Z for extruder 0, A for extruder 1
+                                             (T1's Z is renamed to A).
+            G28 X Y                          home XY, when printess/home_xy is on. The
+                                             printer's G28 then centers XY on the plate
+                                             (PLATE_CENTER_*).
+            G92 X.. Y.. B0 C0                declare the zero-offset origin at that
+                                             post-home position WITHOUT moving
 
-        G92 sets the current position rather than driving to it, so nothing has to move: the
-        machine is already at a known spot after G28 (XY at PLATE_CENTER_*, Z/A at G28_HOP),
-        and each axis value is that known position minus its offset. Subtracting the offset
-        shifts the print origin away from the endstop by that many mm; an offset of 0 simply
-        keeps the post-home position as the origin. The first print move provides Z clearance,
-        so no separate raise/lower travel is emitted.
+        G92 sets the current position rather than driving to it, so nothing has to move:
+        the machine is already at a known spot in XY after G28 (PLATE_CENTER_*), and each
+        axis value is that known position minus its offset. Subtracting the offset shifts
+        the print origin away from the endstop by that many mm; an offset of 0 simply keeps
+        the post-home position as the origin. Z and A are deliberately absent from the G92
+        so the operator's manual zero survives untouched.
 
-        X/Y are gated on printess/home_xy; Z on (printess/home_za and extruder 0 prints);
-        A on (printess/home_za and extruder 1 prints) — T0 uses the real Z axis, T1's Z is
-        renamed to A. Offsets come from printess/zero_offset_{x,y,z,a} (mm from the endstop).
-        Only axes that were homed are placed in the G92; B (T0) and C (T1) are always zeroed.
-        Returned as a '\\n'-joined string with no trailing newline.
+        X/Y are gated on printess/home_xy, with offsets from printess/zero_offset_{x,y}
+        (mm from the endstop). B (T0) and C (T1) are always zeroed. Returned as a
+        '\n'-joined string with no trailing newline.
         """
         from UM.Application import Application
         prefs = Application.getInstance().getPreferences()
@@ -1032,46 +1040,31 @@ class PrintessOneAtATime(Script):
                 return 0.0
 
         home_xy = _flag("printess/home_xy")
-        home_za = _flag("printess/home_za")
-        z_active = home_za and has_t0
-        a_active = home_za and has_t1
 
-        # Relative clearance lift before anything else, so the nozzles come up off
-        # the bed before homing. Gated on tool usage only (not on the homing
-        # checkboxes): an axis whose extruder never prints is never commanded.
-        lines = []
+        lines = ['G90']
+
+        # Absolute clearance lift before anything else, so the nozzles come up off the
+        # bed before the plate homes in XY. Gated on tool usage: an axis whose extruder
+        # never prints is never commanded, and is not one the operator will have zeroed.
         lift_axes = []
         if has_t0:
             lift_axes.append('Z{0:g}'.format(STARTUP_CLEARANCE))
         if has_t1:
             lift_axes.append('A{0:g}'.format(STARTUP_CLEARANCE))
         if lift_axes:
-            lines.append('G91')
             lines.append('G1 ' + ' '.join(lift_axes) + ' F{0:g}'.format(STARTUP_CLEARANCE_F))
 
-        lines.append('G90')
-
-        home_axes = []
         if home_xy:
-            home_axes += ['X', 'Y']
-        if z_active:
-            home_axes.append('Z')
-        if a_active:
-            home_axes.append('A')
-        if home_axes:
-            lines.append('G28 ' + ' '.join(home_axes))
+            lines.append('G28 X Y')
 
         # Declare the zero-offset origin at the known post-home position without moving:
-        # each value is (post-home position - offset). Only homed axes are included; the
-        # extruder axes B (T0) and C (T1) are always zeroed.
+        # each value is (post-home position - offset). Z and A are left out so the
+        # operator's manual G92 zero is preserved; the extruder axes B (T0) and C (T1)
+        # are always zeroed.
         g92 = []
         if home_xy:
             g92.append(f'X{PLATE_CENTER_X - _num("printess/zero_offset_x"):.3f}')
             g92.append(f'Y{PLATE_CENTER_Y - _num("printess/zero_offset_y"):.3f}')
-        if z_active:
-            g92.append(f'Z{G28_HOP - _num("printess/zero_offset_z"):.3f}')
-        if a_active:
-            g92.append(f'A{G28_HOP - _num("printess/zero_offset_a"):.3f}')
         g92 += ['B0', 'C0']
         lines.append('G92 ' + ' '.join(g92))
 

@@ -91,11 +91,12 @@ Column
         visible: (widget.backendState == UM.Backend.Processing || (prepareButtons.autoSlice && widget.backendState == UM.Backend.NotStarted))
     }
 
-    // Printess: per-axis homing toggles + zero-offset fields, shown directly above
-    // the Slice button. This whole widget is unloaded once output is available, so the
-    // section is automatically hidden after slicing. The state is stored in preferences
-    // and read by the Printess post-processing scripts, which build the startup
-    // homing (G28) + offset move + zero (G92) block from it.
+    // Printess: XY homing toggle + zero-offset fields, shown directly above the Slice
+    // button. This whole widget is unloaded once output is available, so the section is
+    // automatically hidden after slicing. The state is stored in preferences and read by
+    // the Printess post-processing scripts, which build the startup homing (G28) + zero
+    // (G92) block from it. Z and A are not homed at all, so they have no row here; see
+    // the manual-zero warning below.
     Column
     {
         id: homingSection
@@ -166,49 +167,7 @@ Column
             }
         }
 
-        // Row: Z & A homing toggle + Z / A zero-offset fields.
-        RowLayout
-        {
-            width: parent.width
-            spacing: UM.Theme.getSize("narrow_margin").width
-
-            UM.CheckBox
-            {
-                id: homeZACheckbox
-                text: catalog.i18nc("@option:check", "Z & A Axis")
-                leftPadding: UM.Theme.getSize("default_margin").width
-                checked: UM.Preferences.getValue("printess/home_za")
-                onClicked: UM.Preferences.setValue("printess/home_za", checked)
-            }
-
-            Item { Layout.fillWidth: true }
-
-            UM.Label { text: catalog.i18nc("@label", "Z"); Layout.alignment: Qt.AlignVCenter }
-            Cura.TextField
-            {
-                id: offsetZField
-                Layout.preferredWidth: homingSection.offsetFieldWidth
-                Layout.alignment: Qt.AlignVCenter
-                enabled: homeZACheckbox.checked
-                text: UM.Preferences.getValue("printess/zero_offset_z")
-                validator: DoubleValidator { locale: "en_US"; notation: DoubleValidator.StandardNotation }
-                onEditingFinished: UM.Preferences.setValue("printess/zero_offset_z", text)
-            }
-
-            UM.Label { text: catalog.i18nc("@label", "A"); Layout.alignment: Qt.AlignVCenter }
-            Cura.TextField
-            {
-                id: offsetAField
-                Layout.preferredWidth: homingSection.offsetFieldWidth
-                Layout.alignment: Qt.AlignVCenter
-                enabled: homeZACheckbox.checked
-                text: UM.Preferences.getValue("printess/zero_offset_a")
-                validator: DoubleValidator { locale: "en_US"; notation: DoubleValidator.StandardNotation }
-                onEditingFinished: UM.Preferences.setValue("printess/zero_offset_a", text)
-            }
-        }
-
-        // Caption clarifying the fields are per-axis zero offsets in millimetres.
+        // Caption clarifying the fields are per-axis zero offsets in millimeters.
         Item
         {
             width: parent.width
@@ -221,6 +180,38 @@ Column
                 font: UM.Theme.getFont("small")
                 color: UM.Theme.getColor("text_inactive")
             }
+        }
+    }
+
+    // Printess: Z and A are never homed, so the print starts from wherever the operator
+    // last zeroed them. Nothing in the g-code can check that, which makes this reminder
+    // the only guard against driving a syringe into the plate. Sits directly above the
+    // Slice button so it is read at the moment the file is made.
+    Item
+    {
+        id: manualZeroWarning
+        width: parent.width
+        height: Math.max(manualZeroIcon.height, manualZeroLabel.implicitHeight)
+
+        UM.StatusIcon
+        {
+            id: manualZeroIcon
+            width: UM.Theme.getSize("section_icon").width
+            height: width
+            status: UM.StatusIcon.Status.WARNING
+        }
+
+        UM.Label
+        {
+            id: manualZeroLabel
+            anchors.left: manualZeroIcon.right
+            anchors.right: parent.right
+            anchors.leftMargin: UM.Theme.getSize("thin_margin").width
+            // Deliberately the plain "text" color, not "text_detail": the detail tone is
+            // half-alpha and unreadable, and this is the one label that must not be missed.
+            color: UM.Theme.getColor("text")
+            wrapMode: Text.WordWrap
+            text: catalog.i18nc("@label", "Zero the used syringe axes with G92 on Pronterface before printing")
         }
     }
 

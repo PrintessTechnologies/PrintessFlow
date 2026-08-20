@@ -16,7 +16,7 @@
 #     including reading the same printess/home_* and printess/zero_offset_*
 #     preferences, so a user who has changed their homing setup gets the same
 #     behavior here as on a real print;
-#   - the four constants it depends on are declared once, below, and the test
+#   - the constants it depends on are declared once, below, and the test
 #     harness asserts they still equal the values in PrintessOneAtATime.py.
 #     If that script's homing changes, the harness fails rather than the
 #     printer.
@@ -33,8 +33,7 @@ from typing import Dict, List
 # ---------------------------------------------------------------------------
 PLATE_CENTER_X = 63.0        # mm from the X endstop: build-plate center after G28
 PLATE_CENTER_Y = 42.0        # mm from the Y endstop: build-plate center after G28
-G28_HOP = 30.0               # mm: height G28 hops Z and A to after homing
-STARTUP_CLEARANCE = 35.0     # mm to raise before homing
+STARTUP_CLEARANCE = 50.0     # mm: absolute height to raise the carriage to before XY homes
 STARTUP_CLEARANCE_F = 200.0  # feedrate for that lift
 PARK_LIFT = 30.0             # absolute park height, fallback if the setting is unreadable
 
@@ -157,45 +156,39 @@ def fits_on_plate(count: int, cfg: Dict):
 
 
 def _startup(cfg: Dict, extruder: int) -> List[str]:
-    """Clearance lift, homing and the zero-offset datum.
+    """Clearance lift, XY homing and the zero-offset datum.
 
     Reproduces PrintessOneAtATime._startup_datum. Order and reasoning are that
     script's, kept verbatim so the printer sees the same opening on a test strip
     as on a real print:
 
-        G91                       relative, for the lift only
-        G1 Z.. F..                raise the carriage clear of the bed before homing
         G90                       absolute
-        G28 <axes>                only the checkbox-enabled axes
-        G92 X.. Y.. Z.. B0 C0     declare the origin at the post-home position, no motion
+        G1 Z.. F..                raise the carriage to STARTUP_CLEARANCE above the
+                                  operator's zero, clear of the bed before XY homes
+        G28 X Y                   only when the checkbox is on
+        G92 X.. Y.. B0 C0         declare the origin at the post-home position, no motion
 
-    The axis of the extruder that is NOT printing is never commanded, which is
-    the axis-homing invariant: this is where the tester gets it for free, since
-    it only ever drives one extruder. B and C are both zeroed in the G92 because
-    that declares a position without moving anything, exactly as the script does.
+    Z and A are never homed and never appear in the G92: the operator zeroes the
+    axis of the extruder they are using with a manual G92 before printing, and
+    every Z/A coordinate here is absolute against that datum. The axis of the
+    extruder that is NOT printing is never commanded, which is the axis-homing
+    invariant: this is where the tester gets it for free, since it only ever
+    drives one extruder. B and C are both zeroed in the G92 because that declares
+    a position without moving anything, exactly as the script does.
     """
     z_axis, _ = axes_for(extruder)
     lines = []
 
-    lines.append("G91")
-    lines.append("G1 {0}{1:g} F{2:g}".format(z_axis, STARTUP_CLEARANCE, STARTUP_CLEARANCE_F))
     lines.append("G90")
+    lines.append("G1 {0}{1:g} F{2:g}".format(z_axis, STARTUP_CLEARANCE, STARTUP_CLEARANCE_F))
 
-    home_axes = []
     if cfg["home_xy"]:
-        home_axes += ["X", "Y"]
-    if cfg["home_za"]:
-        home_axes.append(z_axis)
-    if home_axes:
-        lines.append("G28 " + " ".join(home_axes))
+        lines.append("G28 X Y")
 
     g92 = []
     if cfg["home_xy"]:
         g92.append("X{0:.3f}".format(PLATE_CENTER_X - cfg["zero_offset_x"]))
         g92.append("Y{0:.3f}".format(PLATE_CENTER_Y - cfg["zero_offset_y"]))
-    if cfg["home_za"]:
-        offset = cfg["zero_offset_z"] if extruder == 0 else cfg["zero_offset_a"]
-        g92.append("{0}{1:.3f}".format(z_axis, G28_HOP - offset))
     g92 += ["B0", "C0"]
     lines.append("G92 " + " ".join(g92))
 
