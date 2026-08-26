@@ -31,8 +31,8 @@ from typing import Dict, List
 # Machine constants mirrored from PrintessOneAtATime.py.
 # scratchpad/test_flow_tester.py parses that script and asserts these match.
 # ---------------------------------------------------------------------------
-PLATE_CENTER_X = 63.0        # mm from the X endstop: build-plate center after G28
-PLATE_CENTER_Y = 42.0        # mm from the Y endstop: build-plate center after G28
+PLATE_CENTER_X = 62.00       # mm from the X endstop: build-plate center after G28
+PLATE_CENTER_Y = 43.00       # mm from the Y endstop: build-plate center after G28
 STARTUP_CLEARANCE = 50.0     # mm: absolute height to raise the carriage to before XY homes
 STARTUP_CLEARANCE_F = 200.0  # feedrate for that lift
 PARK_LIFT = 30.0             # absolute park height, fallback if the setting is unreadable

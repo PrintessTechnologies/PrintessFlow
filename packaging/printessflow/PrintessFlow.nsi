@@ -4,7 +4,7 @@
 ; seeding the machine/profile config into %APPDATA%\cura\5.12 on first install.
 
 !define APP_NAME     "PrintessFlow"
-!define APP_VERSION  "1.0.3"
+!define APP_VERSION  "1.0.4"
 !define COMPANY      "Printess Technologies"
 !define MAIN_EXE     "PrintessFlow.exe"
 !define SRC_EXE      "UltiMaker-Cura.exe"   ; launcher name produced by PyInstaller
@@ -24,7 +24,7 @@
 ; managed institutional machines running EDR.
 RequestExecutionLevel admin
 
-VIProductVersion "1.0.3.0"
+VIProductVersion "1.0.4.0"
 VIAddVersionKey "ProductName"     "${APP_NAME}"
 VIAddVersionKey "CompanyName"     "${COMPANY}"
 VIAddVersionKey "LegalCopyright"  "Copyright (c) 2026 ${COMPANY}. Based on UltiMaker Cura (LGPLv3) and CuraEngine (AGPLv3)."
@@ -149,11 +149,19 @@ Section "PrintessFlow" SEC_MAIN
     ;     accepted a value then reverted. The seed-skip above means a plain
     ;     reinstall would not replace those broken files, so heal them here
     ;     unconditionally. Only the user containers are overwritten; they hold
-    ;     transient, unmerged edits, so dispense tips (quality_changes), machine
-    ;     settings (definition_changes) and preferences (cura.cfg) are untouched.
+    ;     transient, unmerged edits, so dispense tips (quality_changes) and
+    ;     preferences (cura.cfg) are untouched.
     SetOverwrite on
     SetOutPath "$APPDATA\cura\5.12\user"
     File /r "seed\cura\5.12\user\*"
+
+    ;     Machine geometry is fixed hardware, not a user preference, and it is
+    ;     coupled to the startup G92 datum baked into the post-processing scripts
+    ;     (PLATE_CENTER_X/Y). If the two disagree, every print shifts on the plate,
+    ;     so this one file is refreshed even on an upgrade where the seed was
+    ;     skipped. 1.0.4 changed the plate to 124 x 86.1.
+    SetOutPath "$APPDATA\cura\5.12\definition_changes"
+    File "seed\cura\5.12\definition_changes\Printess+V1+Series_settings.inst.cfg"
 
     ; --- License files (LGPL/AGPL/Qt/third-party + attribution) ---
     SetOutPath "$INSTDIR\licenses"

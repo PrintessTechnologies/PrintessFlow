@@ -15,11 +15,16 @@ from UM.Operations.TranslateOperation import TranslateOperation
 # of the bed. They are referenced to extruder 0; arrangeWellPlate() applies an
 # additional half-extruder X shift so the plate sits between the two nozzles.
 # Custom configs have no measured origin and fall back to the legacy bed-centred layout.
+# These are tied to the startup G92 datum (PLATE_CENTER_X/Y in PrintessOneAtATime).
+# The datum fixes where printer (0,0) physically sits, so if it changes by (dx, dy)
+# every origin here must change by the SAME (dx, dy) or the wells move under the
+# nozzle. They do NOT depend on machine_width/machine_depth: those only affect the
+# scene conversion, which reads them live and cancels out.
 _PRESETS = {
-    "6-Well":  {"rows": 2,  "cols": 3,  "spacing_x": 39.12, "spacing_y": 39.12, "origin_x": 40.0, "origin_y": 23.0},
-    "12-Well": {"rows": 3,  "cols": 4,  "spacing_x": 26.01, "spacing_y": 26.01, "origin_x": 40.0, "origin_y": 16.0},
-    "24-Well": {"rows": 4,  "cols": 6,  "spacing_x": 19.30, "spacing_y": 19.30, "origin_x": 33.0, "origin_y": 14.0},
-    "48-Well": {"rows": 6,  "cols": 8,  "spacing_x": 13.08, "spacing_y": 13.08, "origin_x": 34.0, "origin_y": 10.0},
+    "6-Well":  {"rows": 2,  "cols": 3,  "spacing_x": 39.12, "spacing_y": 39.12, "origin_x": 39.0, "origin_y": 24.0},
+    "12-Well": {"rows": 3,  "cols": 4,  "spacing_x": 26.01, "spacing_y": 26.01, "origin_x": 39.0, "origin_y": 17.0},
+    "24-Well": {"rows": 4,  "cols": 6,  "spacing_x": 19.30, "spacing_y": 19.30, "origin_x": 32.0, "origin_y": 15.0},
+    "48-Well": {"rows": 6,  "cols": 8,  "spacing_x": 13.08, "spacing_y": 13.08, "origin_x": 33.0, "origin_y": 11.0},
 }
 
 _PREF_ROWS       = "WellPlate/rows"
@@ -67,8 +72,8 @@ class WellPlateArrange(QObject, Extension):
         self._cols      = 3
         self._spacing_x = 39.12
         self._spacing_y = 39.12
-        self._origin_x  = 40.0     # bottom-left well centre, printer (corner) coords
-        self._origin_y  = 23.0
+        self._origin_x  = 39.0     # bottom-left well centre, printer (corner) coords
+        self._origin_y  = 24.0
         self._has_origin = True    # default matches the 6-Well preset
 
         # Which entry is selected in the UI ("6-Well" .. "48-Well" or "Custom").

@@ -29,8 +29,16 @@ PARK_LIFT = 30.0  # absolute park height (mm) for the idle extruder; fallback if
 # zero-offset origin relative to that without moving. Z and A are never homed, so they
 # have no machine-defined post-home position; the operator zeroes the axis of the extruder
 # they are using with a manual G92 before starting the print.
-PLATE_CENTER_X = 63.0   # mm from the X endstop: build-plate centre after G28
-PLATE_CENTER_Y = 42.0   # mm from the Y endstop: build-plate centre after G28
+# This is the head's post-G28 position expressed in Cura's build-plate frame, whose origin
+# is the front-left plate corner (machine_center_is_zero = False). It is what couples the
+# two coordinate systems: change it and every print shifts on the plate by the difference.
+# It is a MEASURED value, dialed in from test prints, so it need not come out at exactly
+# (machine_width / 2, machine_depth / 2). Where it deviates, that is the amount by which
+# G28 does not leave the head over the true plate center, and Cura's on-screen plate is
+# offset from the physical one by the same amount. Keep all three copies of these
+# constants in step: PrintessOneAtATime, PrintessLayerByLayer, FlowTestGenerator.
+PLATE_CENTER_X = 62.00   # mm from the X endstop: build-plate center after G28
+PLATE_CENTER_Y = 43.00   # mm from the Y endstop: build-plate center after G28
 
 # Clearance lift emitted at the very top of the file, before XY homes, so the nozzles
 # rise off the bed first. Absolute (G90) against the operator's manual Z/A zero, not a

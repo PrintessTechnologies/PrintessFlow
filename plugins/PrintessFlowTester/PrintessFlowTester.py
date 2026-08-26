@@ -173,8 +173,8 @@ class PrintessFlowTester(Extension, QObject):
         """
         return {
             "extruder": extruder,
-            "machine_width": self._globalProperty("machine_width", 129.0),
-            "machine_depth": self._globalProperty("machine_depth", 87.0),
+            "machine_width": self._globalProperty("machine_width", 124.0),
+            "machine_depth": self._globalProperty("machine_depth", 86.1),
             "layer_height_0": self._globalProperty("layer_height_0", 0.2),
 
             "line_width": self._extruderProperty(extruder, "line_width", 0.4),

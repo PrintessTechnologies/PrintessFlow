@@ -55,10 +55,20 @@ fi
 # flow): the field accepted a value then reverted. The seed above is skipped once
 # the machine exists, so heal the user containers unconditionally here. Only the
 # user containers are replaced; they hold transient, unmerged edits, so dispense
-# tips, machine settings and preferences are left intact.
+# tips and preferences are left intact.
 if [ -d "$SEED_DIR/user" ]; then
   mkdir -p "$DATA_DIR/user"
   cp -R "$SEED_DIR/user/." "$DATA_DIR/user/"
+fi
+
+# Machine geometry is fixed hardware, not a user preference, and it is coupled to
+# the startup G92 datum baked into the post-processing scripts (PLATE_CENTER_X/Y).
+# If the two disagree, every print shifts on the plate, so this one file is
+# refreshed even when the seed above was skipped. 1.0.4 changed it to 124 x 86.1.
+MACHINE_SETTINGS="definition_changes/Printess+V1+Series_settings.inst.cfg"
+if [ -f "$SEED_DIR/$MACHINE_SETTINGS" ]; then
+  mkdir -p "$DATA_DIR/definition_changes"
+  cp "$SEED_DIR/$MACHINE_SETTINGS" "$DATA_DIR/$MACHINE_SETTINGS"
 fi
 
 exec "$SCRIPT_DIR/PrintessFlow-bin" "$@"
