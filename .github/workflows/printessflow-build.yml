@@ -256,7 +256,8 @@ jobs:
           $edited = @(
             @{ path = "$app/share/cura/resources/qml/ObjectSelector.qml";   marker = "Object/Print Order list" },
             @{ path = "$app/share/cura/resources/qml/ObjectItemButton.qml"; marker = "PrintessPrintOrder.moveObject" },
-            @{ path = "$app/share/uranium/plugins/Tools/TranslateTool/TranslateTool.py"; marker = "_plateHalfSize" }
+            @{ path = "$app/share/uranium/plugins/Tools/TranslateTool/TranslateTool.py"; marker = "_plateHalfSize" },
+            @{ path = "$app/share/uranium/plugins/Tools/CameraTool/CameraTool.py"; marker = "PRINTESS CHANGE" }
           )
           foreach ($e in $edited) {
             if (-not (Select-String -Path $e.path -SimpleMatch $e.marker -Quiet)) {
@@ -373,6 +374,8 @@ jobs:
           check "$APP/Contents/Resources/share/cura/plugins/PrintessPrintOrder/PrintessPrintOrder.py"
           grep -q "_plateHalfSize" "$APP/Contents/Resources/share/uranium/plugins/Tools/TranslateTool/TranslateTool.py" \
             || { echo "MISSING: the Move tool's printer-frame coordinates"; fail=1; }
+          grep -q "PRINTESS CHANGE" "$APP/Contents/Resources/share/uranium/plugins/Tools/CameraTool/CameraTool.py" \
+            || { echo "MISSING: the smooth camera rotation fix"; fail=1; }
           check "$APP/Contents/Resources/share/cura/resources/setting_visibility/printess_v1.0.cfg"
           EXEC_NAME=$(defaults read "$(pwd)/$APP/Contents/Info" CFBundleExecutable)
           head -1 "$APP/Contents/MacOS/$EXEC_NAME" | grep -q '^#!/bin/bash' || { echo "launcher not installed as CFBundleExecutable"; fail=1; }

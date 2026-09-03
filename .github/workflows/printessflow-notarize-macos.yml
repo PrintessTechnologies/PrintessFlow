@@ -40,6 +40,26 @@ jobs:
       - name: Apply PrintessFlow overlay
         run: python3 packaging/overlay/apply_overlay.py --app-root "PrintessFlow.app" --repo-root .
 
+      - name: Verify customizations landed
+        # This job produces the only shippable .dmg, and it used to notarize
+        # whatever the overlay happened to produce. A stock file surviving the
+        # overlay would have been signed, notarized and released unnoticed,
+        # which is exactly how the stock CameraTool shipped through 1.0.4.
+        # Same assertions as the build workflow's macOS job.
+        run: |
+          APP="PrintessFlow.app"
+          fail=0
+          check() { if [ ! -e "$1" ]; then echo "MISSING: $1"; fail=1; fi; }
+          check "$APP/Contents/Resources/share/cura/plugins/WellPlateArrangeTool/plugin.json"
+          check "$APP/Contents/Resources/share/cura/plugins/PrintessAllMaterials/plugin.json"
+          check "$APP/Contents/Resources/share/cura/plugins/PrintessPrintOrder/PrintessPrintOrder.py"
+          check "$APP/Contents/Resources/share/cura/resources/setting_visibility/printess_v1.0.cfg"
+          grep -q "_plateHalfSize" "$APP/Contents/Resources/share/uranium/plugins/Tools/TranslateTool/TranslateTool.py"             || { echo "MISSING: the Move tool's printer-frame coordinates"; fail=1; }
+          grep -q "PRINTESS CHANGE" "$APP/Contents/Resources/share/uranium/plugins/Tools/CameraTool/CameraTool.py"             || { echo "MISSING: the smooth camera rotation fix"; fail=1; }
+          grep -q "Object/Print Order list" "$APP/Contents/Resources/share/cura/resources/qml/ObjectSelector.qml"             || { echo "MISSING: the print order object list"; fail=1; }
+          [ $fail -eq 0 ] || { echo "customization verification FAILED"; exit 1; }
+          echo "customizations verified"
+
       - name: Bundle seed + install first-run launcher
         run: |
           APP="PrintessFlow.app"

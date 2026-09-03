@@ -269,11 +269,17 @@ def dest_for(repo_rel: str, share_cura, cura_pkg, um_root):
         return (share_cura / repo_rel) if share_cura else None
     if repo_rel.startswith("UM/"):
         return (um_root / repo_rel) if um_root else None
-    # Uranium's own plugins sit beside its UM package, so um_root is already the
-    # right base and the "uranium/" prefix comes off. CuraTestInstall.bat puts
-    # these in <app>/share/uranium/..., which is the same place.
+    # Uranium's PLUGINS are not beside its UM package. The UM package is
+    # unpacked at the top of the app, so um_root is the app root, but the
+    # plugins are loaded from <app>/share/uranium/plugins/... exactly where
+    # CuraTestInstall.bat copies them. Deriving that from share_cura keeps
+    # Windows (<app>/share) and macOS (Contents/Resources/share) both right.
+    #
+    # This used to hand back um_root/plugins/..., which wrote a stray directory
+    # at the app root that nothing loads and left the real plugin stock. Every
+    # release up to 1.0.4 shipped the stock CameraTool that way.
     if repo_rel.startswith("uranium/"):
-        return (um_root / repo_rel[len("uranium/"):]) if um_root else None
+        return (share_cura.parent / "uranium" / repo_rel[len("uranium/"):]) if share_cura else None
     return None
 
 
