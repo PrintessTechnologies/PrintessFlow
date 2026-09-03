@@ -14,6 +14,7 @@ import re
 import math
 from collections import deque
 from ..Script import Script
+from UM.Logger import Logger
 
 PARK_LIFT = 30.0  # absolute park height (mm); fallback if the setting is unreadable
 
@@ -41,6 +42,207 @@ STARTUP_CLEARANCE   = 50.0   # mm: absolute height to raise the used carriage(s)
 STARTUP_CLEARANCE_F = 200.0  # feedrate for that lift
 
 
+# ---------------------------------------------------------------------------
+# Print order pre-pass
+#
+# The operator sets the print order in the object list, and this is where a
+# layer-by-layer print obeys it. It runs BEFORE anything else in execute(), on
+# CuraEngine's own output, and does one thing: within each layer it puts the
+# ;MESH: sections in the numbered order. Everything downstream then walks a
+# stream that is already in the right order and needs no knowledge of any of it.
+#
+# A pre-pass rather than a change to the emitter, and that is the whole design.
+# The main loop carries state from line to line: which tool is live, whether it
+# is retracted, the last XY, the current layer height, the feedrate CuraEngine
+# last wrote. Reordering the OUTPUT would strand every one of those against the
+# lines they were computed from. Reordering the INPUT invalidates none of them,
+# because they are all derived by walking whatever it is handed.
+#
+# Two properties of the g-code are what make the move safe: XY and Z/A are
+# absolute, so a part prints where it belongs no matter what came before it, and
+# extrusion is relative (M83), so no B/C total is thrown off by the shuffle.
+# ---------------------------------------------------------------------------
+
+_PP_MESH_RE  = re.compile(r'^;MESH:(.+)')
+_PP_LAYER_RE = re.compile(r'^;LAYER:\d')
+_PP_TOOL_RE  = re.compile(r'^T([01])\b')
+
+
+def _pp_last_tool(lines, tool):
+    """The tool left active by these lines."""
+    for line in lines:
+        match = _PP_TOOL_RE.match(line.strip())
+        if match:
+            tool = int(match.group(1))
+    return tool
+
+
+def _pp_build_print_order_maps(app):
+    """{gcode_name: print order} and {gcode_name: extruder} from the scene.
+
+    A trimmed copy of PrintessOneAtATime._build_mesh_maps, and duplicated on
+    purpose: the post-processing scripts are loaded one file at a time and do not
+    import each other, the same way the plate-center constants are kept in step
+    by hand across all three of them.
+
+    It reconstructs the ;MESH: names by replaying StartSliceJob's per-name "#N"
+    counter over DepthFirstIterator, which is the only way to tie a name in the
+    g-code back to the node in the object list that carries the number. Meshes in
+    a group take the GROUP's number, so a group stays together and lands where
+    the object list says it does.
+    """
+    from UM.Scene.Iterator.DepthFirstIterator import DepthFirstIterator
+    scene = app.getController().getScene()
+
+    name_counts      = {}
+    order_by_mesh    = {}
+    extruder_by_mesh = {}
+
+    for node in DepthFirstIterator(scene.getRoot()):
+        mesh_data = node.getMeshData()
+        if not node.callDecoration("isSliceable") \
+                or mesh_data is None \
+                or mesh_data.getVertices() is None:
+            continue
+
+        base_name = node.getName()
+        if not base_name:
+            continue
+
+        count      = name_counts.get(base_name, 0)
+        gcode_name = base_name if count == 0 else f"{base_name} #{count + 1}"
+        name_counts[base_name] = count + 1
+
+        # Non-printing meshes are counted for the suffixes above but appear as
+        # ;MESH:NONMESH in the g-code, so they are never a block of their own.
+        if bool(node.callDecoration("isNonPrintingMesh")):
+            continue
+
+        # Climb to the OUTERMOST group. The object list shows one row for the
+        # top-level group and numbers that row, so an inner group of a nested
+        # group keeps whatever number it carried before it was grouped, which
+        # goes stale as soon as the outer group is renumbered.
+        holder = node
+        parent = node.getParent()
+        while parent is not None and parent.callDecoration("isGroup"):
+            holder = parent
+            parent = parent.getParent()
+        try:
+            order_by_mesh[gcode_name] = int(getattr(holder, "printOrder", 0) or 0)
+        except (TypeError, ValueError):
+            order_by_mesh[gcode_name] = 0
+
+        try:
+            extruder_by_mesh[gcode_name] = int(node.callDecoration("getActiveExtruderPosition"))
+        except Exception:
+            extruder_by_mesh[gcode_name] = 0
+
+    return order_by_mesh, extruder_by_mesh
+
+
+def _pp_reorder_layer(chunk, orders, extruders, tool):
+    """One layer, reordered. Returns (chunk, tool left active).
+
+    A block is a named ;MESH: section together with the ;MESH:NONMESH travel that
+    approaches it, so a part keeps the move that goes and fetches it. The travel
+    ends at an absolute XY, which is why it can be carried to a new position at
+    all: wherever the head starts from, it arrives where the part begins.
+    """
+    lines = chunk.split('\n')
+    if not any(_PP_LAYER_RE.match(line.strip()) for line in lines):
+        # Header and footer are not layers. They still get read for their tool
+        # changes, because the tool a chunk leaves active is the tool the next
+        # layer starts with, and that is what decides whether a T has to be
+        # written at all.
+        return chunk, _pp_last_tool(lines, tool)
+
+    prologue = []
+    segments = []   # [name, [lines]] in file order, one per ;MESH: marker
+    current  = None
+    for line in lines:
+        match = _PP_MESH_RE.match(line.strip())
+        if match:
+            current = [match.group(1).strip(), [line]]
+            segments.append(current)
+        elif current is None:
+            prologue.append(line)
+        else:
+            current[1].append(line)
+
+    blocks  = []
+    pending = []    # NONMESH travel waiting for the part it approaches
+    for name, segment_lines in segments:
+        if name == 'NONMESH':
+            pending.append(segment_lines)
+            continue
+        blocks.append({"name": name, "lines": [l for seg in pending for l in seg] + segment_lines})
+        pending = []
+    # Travel with no part after it belongs to the end of the layer, where it is.
+    tail = [line for segment in pending for line in segment]
+
+    if not blocks:
+        return chunk, _pp_last_tool(lines, tool)
+
+    # Ties keep their file order, so parts that share a number (the meshes of one
+    # group) stay in the order CuraEngine chose for them.
+    ranked = sorted(enumerate(blocks),
+                    key = lambda pair: (orders.get(pair[1]["name"], 0) or float('inf'), pair[0]))
+
+    # Every layer goes through the rebuild below, even one already in the right
+    # order and even one holding a single part, and that is not wasted work: it
+    # is the only place the tool is put right. CuraEngine writes at most one T
+    # per layer and lets the next layer INHERIT the tool the last one left, so a
+    # layer can open with T1 parts and no T1 anywhere in it. Reordering an
+    # earlier layer changes what it leaves behind, and a later layer passed
+    # through untouched would then print from whichever syringe happened to be
+    # live. Layers that need no change come back byte-identical anyway, by
+    # comparison at the end rather than by being skipped.
+    out  = list(prologue)
+    tool = _pp_last_tool(prologue, tool)
+    for _, block in ranked:
+        wanted = extruders.get(block["name"])
+        if wanted is None:
+            # A part that could not be tied back to a node: its own tool changes
+            # are the only thing that knows what it prints with, so they stay.
+            out.extend(block["lines"])
+            tool = _pp_last_tool(block["lines"], tool)
+            continue
+        if wanted != tool:
+            out.append("T{0}".format(wanted))
+            tool = wanted
+        # CuraEngine's own T commands are dropped and re-issued above, once per
+        # block, so a reordered layer switches tools where it now needs to and
+        # never where it used to. A redundant T would cost a park and a prime,
+        # since the main loop treats every T as a real change.
+        out.extend(line for line in block["lines"] if not _PP_TOOL_RE.match(line.strip()))
+
+    # The trailing travel is the one piece that must not move. CuraEngine puts
+    # the NEXT layer's height change and its approach at the end of THIS layer,
+    # after the last part, so everything printed above it is at the height this
+    # layer established and the tail is what hands the following layer its own.
+    out.extend(tail)
+    tool = _pp_last_tool(tail, tool)
+
+    rebuilt = '\n'.join(out)
+    return (chunk if rebuilt == chunk else rebuilt), tool
+
+
+def _pp_reorder(data, orders, extruders):
+    """Every layer in the file, in the operator's order."""
+    if not any(orders.values()):
+        return data     # nothing numbered: hand back the file untouched
+
+    # T0 to begin with, matching what the scan below assumes when a file carries
+    # no T commands at all. The header is read before the first layer, so a file
+    # that does say which tool it starts on overrides this.
+    tool = 0
+    result = []
+    for chunk in data:
+        new_chunk, tool = _pp_reorder_layer(chunk, orders, extruders, tool)
+        result.append(new_chunk)
+    return result
+
+
 class PrintessLayerByLayer(Script):
 
     def getSettingDataString(self):
@@ -55,6 +257,19 @@ class PrintessLayerByLayer(Script):
     def execute(self, data):
         from UM.Application import Application
         app = Application.getInstance()
+
+        # Print order first, so everything below walks a stream that is already
+        # in the right order: the activation scan, the tool-presence scan and the
+        # main pass all read `data` as it now stands. Wrapped because a print
+        # that comes out in CuraEngine's order is a disappointment, while a print
+        # that does not come out at all is a wasted syringe.
+        try:
+            order_by_mesh, extruder_by_mesh = _pp_build_print_order_maps(app)
+            data = _pp_reorder(data, order_by_mesh, extruder_by_mesh)
+        except Exception:
+            Logger.logException("w", "PrintessLayerByLayer: could not apply the print order;"
+                                     " slicing in CuraEngine's own order instead")
+
         e0_travel_f  = 240;   e1_travel_f  = 240
         e0_z_hop_f   = 240;   e1_z_hop_f   = 240
         e0_print_f   = 240;   e1_print_f   = 240
@@ -63,8 +278,11 @@ class PrintessLayerByLayer(Script):
         e0_prime_f   = 240;   e1_prime_f   = 240
         park_lift                      = PARK_LIFT
         retraction_enabled             = {0: True,  1: True}
-        retract_before_travel          = {0: False, 1: False}
-        retract_before_travel_min_dist = {0: 3.0,   1: 3.0}
+        # One switch for both halves of a travel, the lift and the retraction.
+        z_hop                          = {0: False, 1: False}
+        z_hop_height                   = {0: 0.0,   1: 0.0}
+        z_hop_min_dist                 = {0: 0.0,   1: 0.0}
+        machine_height                 = 80.0
 
         def _load(ext0, ext1):
             nonlocal e0_travel_f, e1_travel_f, e0_z_hop_f, e1_z_hop_f
@@ -89,10 +307,18 @@ class PrintessLayerByLayer(Script):
             park_lift             = float(gs.getProperty("printess_park_lift", "value"))
             retraction_enabled             = {0: bool(gs.extruderList[0].getProperty("retraction_enable",                    "value")),
                                                1: bool(gs.extruderList[1].getProperty("retraction_enable",                    "value"))}
-            retract_before_travel          = {0: bool(gs.extruderList[0].getProperty("printess_retract_before_travel",        "value")),
-                                               1: bool(gs.extruderList[1].getProperty("printess_retract_before_travel",        "value"))}
-            retract_before_travel_min_dist = {0: float(gs.extruderList[0].getProperty("printess_retract_before_travel_min_dist", "value")),
-                                               1: float(gs.extruderList[1].getProperty("printess_retract_before_travel_min_dist", "value"))}
+            # One switch for the machine, not one per syringe. The height and
+            # the distance stay per-extruder, since each tip has its own line
+            # width to measure them against.
+            _hop_on        = bool(gs.getProperty("printess_z_hop", "value"))
+            z_hop          = {0: _hop_on, 1: _hop_on}
+            z_hop_height   = {0: float(gs.extruderList[0].getProperty("printess_z_hop_height",   "value")),
+                              1: float(gs.extruderList[1].getProperty("printess_z_hop_height",   "value"))}
+            z_hop_min_dist = {0: float(gs.extruderList[0].getProperty("printess_z_hop_min_dist", "value")),
+                              1: float(gs.extruderList[1].getProperty("printess_z_hop_min_dist", "value"))}
+            # Capped because Z and A are never homed: a lift past the limit loses
+            # steps in silence and every layer after it is wrong.
+            machine_height = float(gs.getProperty("machine_height", "value"))
             _load(gs.extruderList[0], gs.extruderList[1])
         except Exception:
             try:
@@ -171,6 +397,16 @@ class PrintessLayerByLayer(Script):
         tc_in_real_mesh = True
         is_retracted = {0: True, 1: True}  # both tools start retracted
         cur_x, cur_y = None, None           # last known XY position for min-distance checks
+        # is_hopped[t]: this tool is lifted clear of the print and owes a descent
+        # before it extrudes again. Per tool because the two carriages are
+        # different axes at different heights, and cleared at every layer and
+        # tool change, where the script commands an absolute height of its own
+        # and any outstanding lift stops being true.
+        is_hopped = {0: False, 1: False}
+        # Whether the lines being read belong to a real object. Between-object
+        # travel is written under ;MESH:NONMESH, and hopping there would be
+        # lifting for a move the script already makes at its own heights.
+        in_real_mesh = False
 
         result = []
 
@@ -183,7 +419,10 @@ class PrintessLayerByLayer(Script):
 
         for chunk in data:
             out_lines = []
-            for line in chunk.split('\n'):
+            # Kept as a list, not consumed as a stream, so the hop can look
+            # ahead and see whether this tool still prints before it is moved.
+            chunk_lines = chunk.split('\n')
+            for line_index, line in enumerate(chunk_lines):
                 stripped = line.strip()
                 gp = stripped[:stripped.index(';')] if ';' in stripped else stripped
                 if re.match(r'^G[01]\b', gp, re.IGNORECASE):
@@ -209,8 +448,18 @@ class PrintessLayerByLayer(Script):
                     print_started = True
                     if not layer_initialized:
                         awaiting_init = True
+                    # A new layer commands its own height, so nothing is lifted
+                    # any more. Carrying the flag over would spend the next
+                    # descent putting the tool back down to the PREVIOUS layer.
+                    is_hopped = {0: False, 1: False}
+                    in_real_mesh = False
                     out_lines.append(line)
                     continue
+
+                # Which object the following lines belong to, for the hop gate.
+                mesh_line = re.match(r'^;MESH:(.+)', stripped)
+                if mesh_line:
+                    in_real_mesh = (mesh_line.group(1).strip() != 'NONMESH')
 
                 # Strip temperature/fan commands and extrusion mode commands
                 if re.match(r'^M(82|83|104|105|106|107|109|140|141|190|191)\b', gp, re.IGNORECASE):
@@ -253,6 +502,12 @@ class PrintessLayerByLayer(Script):
                         # nozzle clears tall obstacles (e.g. well-plate walls).
                         out_lines.extend(self._set_f(f'G1 {park_axis}{park_lift:.3f} F{spd["z_hop"]}', spd))
 
+                    # The outgoing tool has just been parked at the clearance
+                    # height, and the incoming one is a different axis. Any lift
+                    # either of them owed is void: "down" now means somewhere
+                    # else entirely.
+                    is_hopped = {0: False, 1: False}
+
                     scope = new_scope
                     out_lines.append(line)
 
@@ -285,20 +540,40 @@ class PrintessLayerByLayer(Script):
                         h_match     = re.search(rf'(?<=\s){height_axis}([-+]?\d+\.?\d*)', rgp)
 
                         if h_match:
-                            # XY+height move: XY first at park height, then lower, then prime
+                            # XY+height move: the height is stated by the move
+                            # itself, so take it and strip it from the XY line.
                             height_val = float(h_match.group(1))
                             current_layer_z = height_val
                             xy_line = re.sub(rf'\s{height_axis}[-+]?\d+\.?\d*', '', renamed).rstrip()
-                            out_lines.extend(self._set_f(xy_line, spd))
-                            out_lines.extend(self._set_f(f'G1 {height_axis}{height_val:.3f} F{spd["z_hop"]}', spd))
                         else:
-                            # Pure XY: emit then lower, then prime
-                            out_lines.extend(self._set_f(renamed, spd))
-                            out_lines.extend(self._set_f(f'G1 {height_axis}{current_layer_z:.3f} F{spd["z_hop"]}', spd))
+                            height_val = current_layer_z
+                            xy_line = renamed
 
-                        if retraction_enabled[scope]:
-                            out_lines.extend(self._set_f(f'G1 {e_char}{ra:.5f} F{spd["prime"]}', spd))
-                            is_retracted[scope] = False
+                        def _lower_and_prime():
+                            out_lines.extend(self._set_f(
+                                f'G1 {height_axis}{height_val:.3f} F{spd["z_hop"]}', spd))
+                            if retraction_enabled[scope]:
+                                out_lines.extend(self._set_f(
+                                    f'G1 {e_char}{ra:.5f} F{spd["prime"]}', spd))
+                                is_retracted[scope] = False
+
+                        if re.search(rf'(?<=\s){e_char}[-+]?\d', rgp):
+                            # This first move already EXTRUDES. That happens when
+                            # the mesh's approach travel sits in the previous
+                            # layer's trailing NONMESH, so the block opens on a
+                            # printing move with the tool still parked. Descend
+                            # and prime ahead of it: emitting it first would lay
+                            # the bead at the clearance height, in mid-air. The
+                            # descent happens at the XY the previous travel left
+                            # us on, which is where this mesh begins.
+                            _lower_and_prime()
+                            out_lines.extend(self._set_f(xy_line, spd))
+                        else:
+                            # A travel. Cross at the parked height first, so the
+                            # tip never drags over the print, and only then come
+                            # down onto the start of the mesh.
+                            out_lines.extend(self._set_f(xy_line, spd))
+                            _lower_and_prime()
                         post_tc_state = 'normal'
                     else:
                         # Suppress pure height-axis moves until the real-mesh XY fires.
@@ -335,20 +610,38 @@ class PrintessLayerByLayer(Script):
                 spd = _spd(scope)
 
                 if awaiting_init and is_g01_n and has_xy_n:
-                    # First XY move of the print: lower only the ACTIVE extruder to the
-                    # current layer height. The idle extruder is no longer parked here —
-                    # G28 homing at the top of the file positions every axis. We still
-                    # consume the idle extruder's first activation entry so the park
-                    # heights computed at later tool changes stay correctly aligned.
+                    # Opening the print, in the order PrintessOneAtATime opens a
+                    # part: cross to the start point in XY FIRST, while both
+                    # carriages are still up at the startup clearance, and only
+                    # then bring the printing one down.
+                    #
+                    # The reverse, which this did before, descends to the layer
+                    # height at the post-home position and drags the tip all the
+                    # way across the plate at 1.54mm to reach the first object.
+                    # On a bed with anything already on it that is a collision,
+                    # and on a clean one it still smears the first bead's
+                    # approach.
                     inactive = 1 if scope == 0 else 0
                     if activation_z[inactive]:
                         activation_z[inactive].popleft()
-                    out_lines.extend(self._set_f(f'G1 {height_axis}{current_layer_z:.3f} F{spd["z_hop"]}', spd))
+
                     if h_match_n:
                         xy_line = re.sub(rf'\s{height_axis}[-+]?\d+\.?\d*', '', renamed).rstrip()
-                        out_lines.extend(self._set_f(xy_line, spd))
                     else:
-                        out_lines.extend(self._set_f(renamed, spd))
+                        xy_line = renamed
+                    out_lines.extend(self._set_f(xy_line, spd))
+                    out_lines.extend(self._set_f(f'G1 {height_axis}{current_layer_z:.3f} F{spd["z_hop"]}', spd))
+
+                    # Park the idle syringe at the clearance height, as a part
+                    # start does. Only when that extruder prints somewhere in
+                    # this file: its axis is never homed, so commanding one that
+                    # is not in use drives it from a position nothing has
+                    # defined.
+                    idle_axis = 'Z' if inactive == 0 else 'A'
+                    if (inactive == 0 and has_t0) or (inactive == 1 and has_t1):
+                        out_lines.extend(self._set_f(
+                            f'G1 {idle_axis}{park_lift:.3f} F{_spd(inactive)["z_hop"]}', spd))
+
                     layer_initialized = True
                     awaiting_init = False
                     startup_prime_needed = True
@@ -367,33 +660,66 @@ class PrintessLayerByLayer(Script):
                     has_pos_bc = bool(re.search(rf'(?<=\s){e_char_sp}[+]?\d', rgp_n))
                     has_any_bc = bool(re.search(rf'(?<=\s){e_char_sp}[-+]?\d', rgp_n))
 
+                    # Travel hop, part one: come back down before extruding.
+                    # This sits AHEAD of the retract/prime block below so the
+                    # descent lands before the prime, which is the order that
+                    # keeps pressure off the tip while it is still moving.
+                    if is_hopped[scope] and is_g01_n and has_xy_n and has_pos_bc:
+                        out_lines.extend(self._set_f(
+                            f'G1 {height_axis}{current_layer_z:.3f} F{spd["z_hop"]}', spd))
+                        is_hopped[scope] = False
+
                     if startup_prime_needed and is_g01_n and has_pos_bc:
                         if retraction_enabled[scope]:
                             out_lines.extend(self._set_f(f'G1 {e_char_sp}{ra_sp:.5f} F{spd["prime"]}', spd))
                         startup_prime_needed = False
                         is_retracted[scope] = False
-                    elif retract_before_travel[scope] and retraction_enabled[scope] and layer_initialized and is_g01_n:
-                        if h_match_n and not has_xy_n and not has_any_bc and not is_retracted[scope]:
-                            out_lines.extend(self._set_f(f'G1 {e_char_sp}{-ra_sp:.5f} F{spd["retract"]}', spd))
-                            is_retracted[scope] = True
-                        elif has_xy_n:
-                            if not has_any_bc and not is_retracted[scope]:
-                                xm = re.search(r'(?<=\s)X([-+]?\d+\.?\d*)', rgp_n)
-                                ym = re.search(r'(?<=\s)Y([-+]?\d+\.?\d*)', rgp_n)
-                                dest_x = float(xm.group(1)) if xm else cur_x
-                                dest_y = float(ym.group(1)) if ym else cur_y
-                                if retract_before_travel_min_dist[scope] <= 0.0 or cur_x is None or cur_y is None:
-                                    do_retract = True
-                                else:
-                                    dx = (dest_x - cur_x) if dest_x is not None else 0.0
-                                    dy = (dest_y - cur_y) if dest_y is not None else 0.0
-                                    do_retract = math.sqrt(dx * dx + dy * dy) >= retract_before_travel_min_dist[scope]
-                                if do_retract:
-                                    out_lines.extend(self._set_f(f'G1 {e_char_sp}{-ra_sp:.5f} F1', spd))
-                                    is_retracted[scope] = True
+                    elif z_hop[scope] and retraction_enabled[scope] and layer_initialized and is_g01_n:
+                        # The retraction half of Hop & Retract on Travel. It
+                        # answers to the same switch and the same distance as the
+                        # lift below, so the two always act on the same moves.
+                        #
+                        # TRAVEL only. The old Retract Before Travel also
+                        # retracted ahead of a lone height move, which has no XY
+                        # length for a minimum distance to judge and no
+                        # counterpart in PrintessOneAtATime. Dropping it is what
+                        # makes the two scripts do the same thing from the same
+                        # switch, which is the point of there being one switch.
+                        if has_xy_n:
+                            if not has_any_bc and not is_retracted[scope] and in_real_mesh \
+                                    and self._travel_at_least(z_hop_min_dist[scope], rgp_n, cur_x, cur_y):
+                                out_lines.extend(self._set_f(f'G1 {e_char_sp}{-ra_sp:.5f} F1', spd))
+                                is_retracted[scope] = True
                             elif has_pos_bc and is_retracted[scope]:
                                 out_lines.extend(self._set_f(f'G1 {e_char_sp}{ra_sp:.5f} F{spd["prime"]}', spd))
                                 is_retracted[scope] = False
+
+                    # Travel hop, part two: lift before a pure XY travel inside
+                    # an object. After the retract above, so the pressure is off
+                    # before the tip moves up, and only inside a real mesh:
+                    # NONMESH travel is the move BETWEEN objects, which the
+                    # script already makes at heights of its own.
+                    if z_hop[scope] and in_real_mesh and layer_initialized \
+                            and is_g01_n and has_xy_n and not has_any_bc \
+                            and not is_hopped[scope]:
+                        # A lift this tool comes back down from is sized for the
+                        # layer it is on. Its LAST travel before a park or a new
+                        # layer is sized for whatever height comes next, so the
+                        # short move away from the seam still crosses the print
+                        # high, and the height already on its way then serves as
+                        # the descent. Skipping it left that move dragging.
+                        base = current_layer_z
+                        if not self._prints_again(chunk_lines, line_index):
+                            following = self._next_input_height(chunk_lines, line_index)
+                            if following is not None and following > current_layer_z:
+                                base = following
+                        hop_z = min(base + z_hop_height[scope], machine_height)
+                        if hop_z > current_layer_z and self._travel_at_least(
+                                z_hop_min_dist[scope], rgp_n, cur_x, cur_y):
+                            out_lines.extend(self._set_f(
+                                f'G1 {height_axis}{hop_z:.3f} F{spd["z_hop"]}', spd))
+                            is_hopped[scope] = True
+
                     out_lines.extend(self._set_f(renamed, spd))
                     if is_g01_n and has_xy_n:
                         xm = re.search(r'(?<=\s)X([-+]?\d+\.?\d*)', rgp_n)
@@ -440,9 +766,174 @@ class PrintessLayerByLayer(Script):
             # header comments (result[0]) and are exempt from axis renaming because they
             # are inserted after the main rename pass.
             result[1] = self._startup_datum(has_t0, has_t1) + '\n' + result[1]
+        result = self._collapse_height_moves(result)
         return self._to_absolute_extrusion(result)
 
     # -------------------------------------------------------------------------
+
+    # A move that only sets a height: one of Z or A, and nothing else.
+    _HEIGHT_ONLY_RE = re.compile(r'^G[01]\b(?=[^;]*\s[ZA][-+]?\d)'
+                                 r'(?![^;]*\s[XYBCE][-+]?\d)', re.IGNORECASE)
+
+    @classmethod
+    def _height_axis_of(cls, line):
+        """The single axis a height-only move commands, or None."""
+        gp = (line[:line.index(';')] if ';' in line else line).strip()
+        if not cls._HEIGHT_ONLY_RE.match(gp):
+            return None
+        axes = set(re.findall(r'(?<=\s)([ZA])[-+]?\d', gp, re.IGNORECASE))
+        return axes.pop().upper() if len(axes) == 1 else None
+
+    @staticmethod
+    def _is_retract_only(line):
+        """A plunger move that only pulls back, and goes nowhere else.
+
+        Read before extrusion is made absolute, so a retract is still written
+        as the negative number it is.
+        """
+        gp = (line[:line.index(';')] if ';' in line else line).strip()
+        if not re.match(r'^G[01]\b', gp, re.IGNORECASE):
+            return False
+        if re.search(r'(?<=\s)[XYZAE][-+]?\d', gp):
+            return False
+        return bool(re.search(r'(?<=\s)[BC]-\d', gp))
+
+    @classmethod
+    def _collapse_height_moves(cls, chunks):
+        """Drop height moves nothing can observe, across the WHOLE file.
+
+        Two kinds. First, a height move the very next one overrides (same axis,
+        nothing between but comments and retracts): a layer opens by commanding
+        its height and then immediately lifts, so it would descend to a layer it
+        never prints at. Second, a height move commanding the height the axis
+        already holds, which is where one block lifts for the layer to come and
+        the next block lifts again to the same place.
+
+        It spans chunks because that second pair lands in different ones: a
+        block per chunk, and the pair straddles the boundary. Absolute
+        positioning is what makes both safe. A retract may sit inside a run,
+        since pulling the plunger back does not depend on the height; a PRIME
+        breaks it, and that distinction is the whole safety of this, because
+        priming is the one plunger move whose height matters.
+        """
+        flat = []          # (chunk index, line)
+        for chunk_index, chunk in enumerate(chunks):
+            for line in chunk.split('\n'):
+                flat.append((chunk_index, line))
+
+        drop = set()
+        pending = None     # (index, axis) of a height move nothing has used yet
+        for index, (_, line) in enumerate(flat):
+            stripped = line.strip()
+            if not stripped or stripped.startswith(';'):
+                continue
+            axis = cls._height_axis_of(stripped)
+            if axis is not None:
+                if pending is not None and pending[1] == axis:
+                    drop.add(pending[0])
+                pending = (index, axis)
+                continue
+            if cls._is_retract_only(stripped):
+                continue
+            pending = None
+
+        # Walked over the SURVIVORS of the first pass, because a move dropped
+        # there never happens and so never moves the axis.
+        position = {}
+        for index, (_, line) in enumerate(flat):
+            if index in drop:
+                continue
+            stripped = line.strip()
+            if not stripped or stripped.startswith(';'):
+                continue
+            axis = cls._height_axis_of(stripped)
+            if axis is not None:
+                value = float(re.search(r'(?<=\s)' + axis + r'([-+]?\d+\.?\d*)',
+                                        stripped, re.IGNORECASE).group(1))
+                if position.get(axis) == value:
+                    drop.add(index)
+                else:
+                    position[axis] = value
+                continue
+            for other in ('Z', 'A'):
+                match = re.search(r'(?<=\s)' + other + r'([-+]?\d+\.?\d*)',
+                                  stripped, re.IGNORECASE)
+                if match:
+                    position[other] = float(match.group(1))
+
+        if not drop:
+            return chunks
+        rebuilt = [[] for _ in chunks]
+        for index, (chunk_index, line) in enumerate(flat):
+            if index not in drop:
+                rebuilt[chunk_index].append(line)
+        return ['\n'.join(lines) for lines in rebuilt]
+
+    @staticmethod
+    def _prints_again(lines, index):
+        """Whether anything still prints later in the chunk, before the tool moves.
+
+        The lines scanned are the RAW input, ahead of the axis rename, so
+        extrusion is still written as E here and not as B or C. Looking for B/C
+        finds nothing in the input and silently answers "no" to every question,
+        which switches the lift off altogether.
+
+        A lift is only worth making if the tool comes back down to print. The
+        last travel before a tool change, a new layer or the end of the chunk is
+        followed by an absolute height that overrides the lift, so making it
+        rises the full hop height to cross a seam-exit move and is then
+        cancelled. The scan stops at a T or a ;LAYER: for exactly that reason:
+        past either, the height is restated and this lift is void.
+        """
+        for later in lines[index + 1:]:
+            stripped = later.strip()
+            if re.match(r'^T[01]\b', stripped) or re.match(r'^;LAYER:', stripped):
+                return False
+            gp = stripped[:stripped.index(';')] if ';' in stripped else stripped
+            if not re.match(r'^G[01]\b', gp, re.IGNORECASE):
+                continue
+            if re.search(r'(?<=\s)[XY][-+]?\d', gp) and re.search(r'(?<=\s)E[-+]?\d', gp):
+                return True
+        return False
+
+    @staticmethod
+    def _next_input_height(lines, index):
+        """The next height CuraEngine commands after `index`, or None.
+
+        Scanned on the RAW input, where the height is still Z for either tool
+        and Cura's own hop is off in every dispense-tip profile, so the first Z
+        ahead is the next layer. It is what a lift taken on a tool's last travel
+        is sized against, and it doubles as that lift's descent.
+        """
+        for later in lines[index + 1:]:
+            stripped = later.strip()
+            gp = stripped[:stripped.index(';')] if ';' in stripped else stripped
+            if not re.match(r'^G[01]\b', gp, re.IGNORECASE):
+                continue
+            match = re.search(r'(?<=\s)Z([-+]?\d+\.?\d*)', gp)
+            if match:
+                return float(match.group(1))
+        return None
+
+    @staticmethod
+    def _travel_at_least(threshold, gcode_part, cur_x, cur_y):
+        """Whether this move covers at least `threshold` mm of XY distance.
+
+        The distance measured is the length of the move itself, sqrt(dX2 + dY2),
+        not the height of any lift. A threshold of 0 means every move qualifies.
+        A threshold that cannot be evaluated, because nothing has said where the
+        head is yet, counts as NOT met: the move may well be shorter than the
+        operator asked to act on. PrintessOneAtATime answers this the same way.
+        """
+        if cur_x is None or cur_y is None:
+            return threshold <= 0.0
+        xm = re.search(r'(?<=\s)X([-+]?\d+\.?\d*)', gcode_part)
+        ym = re.search(r'(?<=\s)Y([-+]?\d+\.?\d*)', gcode_part)
+        dest_x = float(xm.group(1)) if xm else cur_x
+        dest_y = float(ym.group(1)) if ym else cur_y
+        distance = math.hypot(dest_x - cur_x, dest_y - cur_y)
+        # A move that goes nowhere is not a travel, whatever the threshold says.
+        return distance > 0.0 and distance >= threshold
 
     def _set_f(self, line, speeds):
         """Classify a renamed G0/G1 line and inject the correct F value.

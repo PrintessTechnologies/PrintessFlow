@@ -1368,27 +1368,40 @@
                     "settable_per_mesh": false,
                     "settable_per_extruder": true
                 },
-                "printess_retract_before_travel":
+                "printess_z_hop":
                 {
-                    "label": "Retract Before Travel",
-                    "description": "Retract the active extruder before each pure XY travel move, then prime just before the next XY+extrusion move. Reduces stringing during travel. Movements to skin and outer-wall are included.",
+                    "label": "Hop & Retract on Travel",
+                    "description": "Before each pure XY travel move inside an object, retract the printing syringe and lift it clear; lower it and prime again before the next extrusion. The lift stops the tip dragging through what is already down, and the retraction stops it stringing across the gap. The axis that lifts belongs to the extruder that is printing (Z for extruder 1, A for extruder 2). Neither is related to the height change at a new layer. This switch covers both syringes; the height and distance below are set per syringe, since each dispense tip has its own line width. Retraction happens only if Enable Retraction is on, so the lift can be used on its own by turning that off.",
                     "type": "bool",
                     "default_value": false,
-                    "enabled": "retraction_enable",
                     "settable_per_mesh": false,
-                    "settable_per_extruder": true,
+                    "settable_per_extruder": false,
                     "settable_per_meshgroup": false,
                     "children":
                     {
-                        "printess_retract_before_travel_min_dist":
+                        "printess_z_hop_height":
                         {
-                            "label": "Minimum Distance for Activation",
-                            "description": "Only retract before a travel move if the travel distance is at least this value. Travel distance is sqrt(ΔX² + ΔY²). Set to 0 to retract before every travel move.",
+                            "label": "Hop Height",
+                            "description": "How far above the current layer the syringe is lifted for a travel move. Defaults to twice the line width, which clears a freshly laid bead of this dispense tip. The lift is capped at the machine height, since the Z and A axes are not homed and would otherwise be driven past their limit without reporting it.",
                             "unit": "mm",
                             "type": "float",
-                            "default_value": 3.0,
+                            "default_value": 1.0,
+                            "value": "line_width * 2",
                             "minimum_value": "0",
-                            "enabled": "printess_retract_before_travel and retraction_enable",
+                            "enabled": "printess_z_hop",
+                            "settable_per_mesh": false,
+                            "settable_per_extruder": true,
+                            "settable_per_meshgroup": false
+                        },
+                        "printess_z_hop_min_dist":
+                        {
+                            "label": "Minimum Distance for Activation",
+                            "description": "Only act before a travel move if the travel distance is at least this value. Travel distance is sqrt(ΔX² + ΔY²), the length of the move itself and not the height of the lift. Set to 0 to lift and retract before every travel move inside an object.",
+                            "unit": "mm",
+                            "type": "float",
+                            "default_value": 0.0,
+                            "minimum_value": "0",
+                            "enabled": "printess_z_hop",
                             "settable_per_mesh": false,
                             "settable_per_extruder": true,
                             "settable_per_meshgroup": false

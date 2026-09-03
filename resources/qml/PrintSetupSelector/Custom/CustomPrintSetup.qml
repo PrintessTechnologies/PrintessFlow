@@ -145,44 +145,11 @@ Item
         watchedProperties: ["value"]
     }
 
-    UM.SettingPropertyProvider
-    {
-        id: retractBeforeTravelE1Provider
-        containerStack: Cura.MachineManager.activeMachine ? Cura.MachineManager.activeMachine.extruderList[0] : null
-        key: "printess_retract_before_travel"
-        watchedProperties: ["value", "enabled"]
-        storeIndex: 0
-    }
-
-    UM.SettingPropertyProvider
-    {
-        id: retractBeforeTravelE2Provider
-        containerStack: Cura.MachineManager.activeMachine ? Cura.MachineManager.activeMachine.extruderList[1] : null
-        key: "printess_retract_before_travel"
-        watchedProperties: ["value", "enabled"]
-        storeIndex: 0
-    }
-
-    // Auto-deselect each extruder's "Retract Before Travel" when its retraction is disabled.
-    Connections
-    {
-        target: retractBeforeTravelE1Provider
-        function onPropertiesChanged()
-        {
-            if (!retractBeforeTravelE1Provider.properties.enabled && retractBeforeTravelE1Provider.properties.value)
-                retractBeforeTravelE1Provider.setPropertyValue("value", false)
-        }
-    }
-
-    Connections
-    {
-        target: retractBeforeTravelE2Provider
-        function onPropertiesChanged()
-        {
-            if (!retractBeforeTravelE2Provider.properties.enabled && retractBeforeTravelE2Provider.properties.value)
-                retractBeforeTravelE2Provider.setPropertyValue("value", false)
-        }
-    }
+    // "Retract Before Travel" and the two providers that unticked it when an
+    // extruder had retraction switched off are gone with the setting itself.
+    // "Hop & Retract on Travel" replaces it and is NOT gated on retraction:
+    // with retraction off it still lifts the tip clear, which is a setting
+    // combination worth having rather than one to correct automatically.
 
     // ── Python reset manager ──────────────────────────────────────────────────
     Cura.PrintessProfileManager { id: resetManager }
