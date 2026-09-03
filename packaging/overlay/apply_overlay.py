@@ -35,6 +35,10 @@ MANIFEST = [
     # --- QML / resources ---
     "resources/qml/Cura.qml",
     "resources/qml/Actions.qml",
+    # The object list: renamed to say it is also the print order, and its rows
+    # carry a drag handle that reorders the print.
+    "resources/qml/ObjectSelector.qml",
+    "resources/qml/ObjectItemButton.qml",
     "resources/qml/Dialogs/AboutDialog.qml",
     "resources/qml/WelcomePages/WelcomeContent.qml",
     "resources/qml/Menus/MaterialMenu.qml",
@@ -111,11 +115,22 @@ MANIFEST = [
     "plugins/PrintessPathDesigner/PathDesignerPanel.qml",
     "plugins/PrintessPathDesigner/PathDesignerButton.qml",
     "plugins/PrintessPathDesigner/PathDesigner.svg",
+    # Object print order. Named files rather than a whole directory (see
+    # EXTRA_PLUGIN_DIRS below): the plugin is three files that are not expected
+    # to multiply, and a MANIFEST entry is checked against the .bat as drift
+    # rather than only reported.
+    "plugins/PrintessPrintOrder/plugin.json",
+    "plugins/PrintessPrintOrder/__init__.py",
+    "plugins/PrintessPrintOrder/PrintessPrintOrder.py",
     # --- patched Uranium plugin ---
     # Smooth camera rotation out of the top view. Installed by
     # CuraTestInstall.bat, so it has to ship too or the released build behaves
     # differently from the one the slicer is tested on.
     "uranium/plugins/Tools/CameraTool/CameraTool.py",
+    # The Move tool reports plate coordinates in the printer's frame (front-left
+    # corner origin), the same frame the g-code is written in, instead of the
+    # scene's centre-origin numbers.
+    "uranium/plugins/Tools/TranslateTool/TranslateTool.py",
     # The six CuraDrive files that rebranded it as "Printess Backups" are gone:
     # CuraDrive itself is in REMOVED_PLUGINS, so copying them in would only mean
     # writing files into a directory deleted moments later. The customizations

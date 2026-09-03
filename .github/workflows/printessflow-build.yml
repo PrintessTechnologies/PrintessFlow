@@ -239,10 +239,29 @@ jobs:
             # manifest-ish file would pass even if the copy brought nothing else.
             "$app/share/cura/plugins/PrintessFlowTester/plugin.json",
             "$app/share/cura/plugins/PrintessFlowTester/FlowTesterDialog.qml",
-            "$app/share/cura/plugins/PrintessFlowTester/FlowTestGenerator.py"
+            "$app/share/cura/plugins/PrintessFlowTester/FlowTestGenerator.py",
+            # Object print order. Without this plugin the object list keeps its
+            # stock behavior and every part comes out unnumbered, so the parts
+            # would silently fall back to the distance sort with the UI for
+            # changing it missing entirely.
+            "$app/share/cura/plugins/PrintessPrintOrder/PrintessPrintOrder.py"
           )
           foreach ($m in $markers) {
             if (-not (Test-Path $m)) { throw "missing customization marker: $m" }
+          }
+          # Two of the customizations are edits to files stock Cura already has,
+          # so Test-Path proves nothing about them: a stock ObjectSelector.qml
+          # passes an existence check while shipping none of the print order UI.
+          # These assert the edit itself.
+          $edited = @(
+            @{ path = "$app/share/cura/resources/qml/ObjectSelector.qml";   marker = "Object/Print Order list" },
+            @{ path = "$app/share/cura/resources/qml/ObjectItemButton.qml"; marker = "PrintessPrintOrder.moveObject" },
+            @{ path = "$app/share/uranium/plugins/Tools/TranslateTool/TranslateTool.py"; marker = "_plateHalfSize" }
+          )
+          foreach ($e in $edited) {
+            if (-not (Select-String -Path $e.path -SimpleMatch $e.marker -Quiet)) {
+              throw "stock file shipped in place of the customized one: $($e.path)"
+            }
           }
           # The other half: plugins that must NOT be present. These are the
           # UltiMaker cloud/network features removed in 1.0.3 because their
@@ -351,6 +370,9 @@ jobs:
           check "$APP/Contents/MacOS/PrintessFlow-bin"
           check "$APP/Contents/Resources/share/cura/plugins/WellPlateArrangeTool/plugin.json"
           check "$APP/Contents/Resources/share/cura/plugins/PrintessAllMaterials/plugin.json"
+          check "$APP/Contents/Resources/share/cura/plugins/PrintessPrintOrder/PrintessPrintOrder.py"
+          grep -q "_plateHalfSize" "$APP/Contents/Resources/share/uranium/plugins/Tools/TranslateTool/TranslateTool.py" \
+            || { echo "MISSING: the Move tool's printer-frame coordinates"; fail=1; }
           check "$APP/Contents/Resources/share/cura/resources/setting_visibility/printess_v1.0.cfg"
           EXEC_NAME=$(defaults read "$(pwd)/$APP/Contents/Info" CFBundleExecutable)
           head -1 "$APP/Contents/MacOS/$EXEC_NAME" | grep -q '^#!/bin/bash' || { echo "launcher not installed as CFBundleExecutable"; fail=1; }
