@@ -1,0 +1,7 @@
+{
+    "name": "Printess Print Order",
+    "author": "Printess Technologies",
+    "version": "1.0.0",
+    "description": "Set the order in which the objects on the build plate are printed, and number the object list to match.",
+    "api": 8
+}

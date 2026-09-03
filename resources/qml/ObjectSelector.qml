@@ -56,7 +56,10 @@ Item
                 id: label
                 anchors.left: openCloseIcon.right
                 anchors.leftMargin: UM.Theme.getSize("default_margin").width
-                text: catalog.i18nc("@label", "Object list")
+                // PrintessFlow: the list is also where the print order is read and
+                // changed, so the name says so. Somebody who wants to reorder a
+                // print has no reason to open something called "Object list".
+                text: catalog.i18nc("@label", "Object/Print Order list")
                 color: openCloseButton.hovered ? UM.Theme.getColor("small_button_text_hover") : UM.Theme.getColor("small_button_text")
                 elide: Text.ElideRight
             }
@@ -108,6 +111,12 @@ Item
             }
             property real maximumHeight: UM.Theme.getSize("objects_menu_size").height
             height: Math.min(contentHeight, maximumHeight)
+
+            // PrintessFlow: where a row being dragged by its grip would land.
+            // Held on the view rather than in the delegate because every delegate
+            // has to draw the same one indicator, and the dragged row is not the
+            // row that has to draw it.
+            property int dropTargetIndex: -1
 
             ScrollBar.vertical: UM.ScrollBar
             {

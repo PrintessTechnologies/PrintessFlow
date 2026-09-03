@@ -16,6 +16,16 @@ Button
     checkable: true
     hoverEnabled: true
 
+    // PrintessFlow: rows carry a grip that drags them into a new print position.
+    // The grip is a separate handle rather than the whole row on purpose: a drag
+    // started anywhere on the row would have to swallow the press and then
+    // re-implement selection, the tooltip and the per-object settings button
+    // underneath it, and get all three right. A handle touches none of them.
+    property var listViewRef: objectItemButton.ListView.view
+    // Checked for truth, not against null: an unattached ListView.view is
+    // undefined, and reading dropTargetIndex off that is a TypeError.
+    property bool dropTarget: listViewRef ? listViewRef.dropTargetIndex === index : false
+
     onHoveredChanged:
     {
         if(hovered && (buttonTextMetrics.elidedText != buttonText.text || perObjectSettingsInfo.visible))
@@ -33,10 +43,12 @@ Button
     background: Rectangle
     {
         id: backgroundRect
-        color: objectItemButton.hovered ? UM.Theme.getColor("action_button_hovered") : "transparent"
+        color: (objectItemButton.hovered || objectItemButton.dropTarget) ? UM.Theme.getColor("action_button_hovered") : "transparent"
         radius: UM.Theme.getSize("action_button_radius").width
         border.width: UM.Theme.getSize("default_lining").width
-        border.color: objectItemButton.checked ? UM.Theme.getColor("primary") : "transparent"
+        // The row a drag would land on is outlined the same way the selected row
+        // is, so the position being chosen is the thing being looked at.
+        border.color: (objectItemButton.checked || objectItemButton.dropTarget) ? UM.Theme.getColor("primary") : "transparent"
     }
 
     contentItem: Item
@@ -44,11 +56,112 @@ Button
         width: objectItemButton.width - objectItemButton.leftPadding
         height: UM.Theme.getSize("action_button").height
 
+        Item
+        {
+            id: dragHandle
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: parent.left
+            width: UM.Theme.getSize("standard_arrow").height
+            height: UM.Theme.getSize("standard_arrow").height
+
+            // Six dots drawn with rectangles rather than a themed icon, so no new
+            // SVG has to ship. That is not only about the file count: a stroked
+            // path is what crashes Qt6Svg at startup, and this needs no path.
+            Grid
+            {
+                anchors.centerIn: parent
+                columns: 2
+                spacing: Math.max(1, Math.round(dragHandle.height / 7))
+
+                Repeater
+                {
+                    model: 6
+                    Rectangle
+                    {
+                        width: Math.max(1, Math.round(dragHandle.height / 7))
+                        height: width
+                        radius: Math.round(width / 2)
+                        color: UM.Theme.getColor("text_scene")
+                        opacity: dragArea.pressed ? 1.0 : (objectItemButton.hovered ? 0.8 : 0.4)
+                    }
+                }
+            }
+
+            MouseArea
+            {
+                id: dragArea
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton
+                cursorShape: Qt.SizeVerCursor
+                // The ListView would otherwise take the drag for a flick and
+                // steal it halfway through.
+                preventStealing: true
+
+                property int targetIndex: -1
+
+                // Which row the pointer is over, in the view's own coordinates so
+                // that a list scrolled part way down still answers correctly.
+                function rowUnder(mouseY)
+                {
+                    var view = objectItemButton.listViewRef;
+                    if (!view)
+                    {
+                        return index;
+                    }
+                    var point = mapToItem(view.contentItem, width / 2, mouseY);
+                    var found = view.indexAt(point.x, point.y);
+                    if (found >= 0)
+                    {
+                        return found;
+                    }
+                    // Dragged off one end of the list: read that as first or last
+                    // rather than as nothing, which is what indexAt reports in the
+                    // gap between rows as well.
+                    return point.y < 0 ? 0 : view.count - 1;
+                }
+
+                function setTarget(newTarget)
+                {
+                    targetIndex = newTarget;
+                    if (objectItemButton.listViewRef)
+                    {
+                        objectItemButton.listViewRef.dropTargetIndex = newTarget;
+                    }
+                }
+
+                function clearTarget()
+                {
+                    if (objectItemButton.listViewRef)
+                    {
+                        objectItemButton.listViewRef.dropTargetIndex = -1;
+                    }
+                    targetIndex = -1;
+                }
+
+                onPressed: setTarget(index)
+
+                onPositionChanged: (mouse) => setTarget(rowUnder(mouse.y))
+
+                onReleased:
+                {
+                    var landing = targetIndex;
+                    clearTarget();
+                    if (landing >= 0 && landing !== index)
+                    {
+                        Cura.PrintessPrintOrder.moveObject(index, landing);
+                    }
+                }
+
+                onCanceled: clearTarget()
+            }
+        }
+
         Rectangle
         {
             id: swatch
             anchors.verticalCenter: parent.verticalCenter
-            anchors.left: parent.left
+            anchors.left: dragHandle.right
+            anchors.leftMargin: UM.Theme.getSize("narrow_margin").width
             width: UM.Theme.getSize("standard_arrow").height
             height: UM.Theme.getSize("standard_arrow").height
             radius: Math.round(width / 2)
@@ -61,8 +174,8 @@ Button
             id: buttonText
             anchors
             {
-                left: showExtruderSwatches ? swatch.right : parent.left
-                leftMargin: showExtruderSwatches ? UM.Theme.getSize("narrow_margin").width : 0
+                left: showExtruderSwatches ? swatch.right : dragHandle.right
+                leftMargin: UM.Theme.getSize("narrow_margin").width
                 right: perObjectSettingsInfo.visible ? perObjectSettingsInfo.left : parent.right
                 verticalCenter: parent.verticalCenter
             }
