@@ -59,12 +59,24 @@ UM.Dialog
         }
     }
 
-    // Return activates; the window close button and Escape go through reject.
+    // Return activates. Escape and the Quit button go through reject(); the
+    // window's X button does NOT: it fires Window.closing and would simply
+    // hide the dialog, leaving the app usable. So closing is handled too, and
+    // in gate mode the close is refused and the app quit instead. In menu
+    // mode the close is allowed and reject() is not involved.
     onAccepted: tryActivate()
     onRejected:
     {
         if (manager.gating)
         {
+            manager.quitApplication()
+        }
+    }
+    onClosing: (close) =>
+    {
+        if (manager.gating)
+        {
+            close.accepted = false
             manager.quitApplication()
         }
     }
