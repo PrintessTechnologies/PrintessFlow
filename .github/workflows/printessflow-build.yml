@@ -244,7 +244,11 @@ jobs:
             # stock behavior and every part comes out unnumbered, so the parts
             # would silently fall back to the distance sort with the UI for
             # changing it missing entirely.
-            "$app/share/cura/plugins/PrintessPrintOrder/PrintessPrintOrder.py"
+            "$app/share/cura/plugins/PrintessPrintOrder/PrintessPrintOrder.py",
+            # Activation gate. Without it a release is ungated and nothing
+            # else in the app would notice.
+            "$app/share/cura/plugins/PrintessLicense/PrintessLicense.py",
+            "$app/share/cura/plugins/PrintessLicense/ActivationDialog.qml"
           )
           foreach ($m in $markers) {
             if (-not (Test-Path $m)) { throw "missing customization marker: $m" }
@@ -372,6 +376,7 @@ jobs:
           check "$APP/Contents/Resources/share/cura/plugins/WellPlateArrangeTool/plugin.json"
           check "$APP/Contents/Resources/share/cura/plugins/PrintessAllMaterials/plugin.json"
           check "$APP/Contents/Resources/share/cura/plugins/PrintessPrintOrder/PrintessPrintOrder.py"
+          check "$APP/Contents/Resources/share/cura/plugins/PrintessLicense/PrintessLicense.py"
           grep -q "_plateHalfSize" "$APP/Contents/Resources/share/uranium/plugins/Tools/TranslateTool/TranslateTool.py" \
             || { echo "MISSING: the Move tool's printer-frame coordinates"; fail=1; }
           grep -q "PRINTESS CHANGE" "$APP/Contents/Resources/share/uranium/plugins/Tools/CameraTool/CameraTool.py" \

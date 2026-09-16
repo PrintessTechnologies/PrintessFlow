@@ -122,6 +122,14 @@ MANIFEST = [
     "plugins/PrintessPrintOrder/plugin.json",
     "plugins/PrintessPrintOrder/__init__.py",
     "plugins/PrintessPrintOrder/PrintessPrintOrder.py",
+    # Activation gate. Named files for the same reason as PrintessPrintOrder.
+    # Without this plugin a release is simply ungated, and nothing else in the
+    # app would notice, so the build workflow asserts the .py as a marker too.
+    "plugins/PrintessLicense/plugin.json",
+    "plugins/PrintessLicense/__init__.py",
+    "plugins/PrintessLicense/PrintessLicense.py",
+    "plugins/PrintessLicense/LicenseCodes.py",
+    "plugins/PrintessLicense/ActivationDialog.qml",
     # --- patched Uranium plugin ---
     # Smooth camera rotation out of the top view. Installed by
     # CuraTestInstall.bat, so it has to ship too or the released build behaves

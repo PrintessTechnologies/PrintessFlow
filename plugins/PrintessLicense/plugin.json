@@ -1,0 +1,7 @@
+{
+    "name": "Printess License",
+    "author": "Printess Technologies",
+    "version": "1.0.0",
+    "description": "Asks a new installation for the activation code that ships with a Printessa Series printer. Existing installations are recognized and never asked.",
+    "api": 8
+}
