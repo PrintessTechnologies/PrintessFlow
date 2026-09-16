@@ -49,12 +49,13 @@ from UM.Resources import Resources
 
 from . import LicenseCodes
 
-# Installations made BEFORE this date are treated as existing users and never
-# asked for a code (see _priorInstallation for how "made before" is known).
-# Set it to the day the first gated build is released: earlier, and someone
-# who downloaded the last ungated build in between is asked on their next
-# update; later, and a fresh install made in the gap is waved through.
-GATE_CUTOFF = datetime.datetime(2026, 9, 16)
+# Installations made BEFORE this instant are treated as existing users and
+# never asked for a code (see _priorInstallation for how "made before" is
+# known). It is the moment the first gated build (1.1.0) was published, in
+# UTC, so it means the same thing in every timezone: anyone who installed any
+# earlier build, up to the minute the gated one appeared, is an existing
+# user. It never changes again.
+GATE_CUTOFF = datetime.datetime(2026, 9, 16, 18, 39, 57, tzinfo=datetime.timezone.utc)
 
 # Dev switch, stricter only: ignore the existing-installation rule so the gate
 # can be exercised on a computer that has run PrintessFlow before. It cannot
@@ -73,6 +74,7 @@ class PrintessLicense(QObject, Extension):
 
         self._dialog = None
         self._gating = False            # True while the app waits for a code
+        self._quitting = False          # quitApplication runs once, whatever asks
         self._license = self._readLicense()
 
         self.setMenuName("License")
@@ -120,6 +122,10 @@ class PrintessLicense(QObject, Extension):
     def licensed(self) -> bool:
         return self._license is not None
 
+    @pyqtProperty(bool, notify=statusChanged)
+    def quitting(self) -> bool:
+        return self._quitting
+
     @pyqtProperty(str, notify=statusChanged)
     def statusText(self) -> str:
         if self._license is None:
@@ -142,15 +148,27 @@ class PrintessLicense(QObject, Extension):
             if self._dialog is not None:
                 self._dialog.show()
             elif self._gating:
-                # Rule 2: a dialog that cannot be built must not leave the app
-                # blocked behind nothing.
-                Logger.log("w", "PrintessLicense: activation dialog failed to build; the app runs ungated")
-                self._gating = False
-                self.statusChanged.emit()
+                self._failOpen("the activation dialog could not be built")
         except Exception:
             Logger.logException("w", "PrintessLicense: could not open the activation dialog")
-            self._gating = False
-            self.statusChanged.emit()
+            if self._gating:
+                self._failOpen("the activation dialog could not be opened")
+
+    def _failOpen(self, why: str):
+        """Rule 2: a dialog that cannot be shown must not leave the app blocked
+        behind nothing. But silently is not acceptable either: a platform-
+        specific QML fault would then mean no gate on that platform and nobody
+        the wiser. So it is said on screen as well as in the log."""
+        Logger.log("w", "PrintessLicense: %s; the app runs ungated", why)
+        self._gating = False
+        self.statusChanged.emit()
+        try:
+            Message("PrintessFlow could not show its activation dialog (%s) and is running "
+                    "without activation. Please email contact@printesstechnologies.com "
+                    "and attach cura.log." % why,
+                    title="Activation unavailable", lifetime=0).show()
+        except Exception:
+            Logger.logException("w", "PrintessLicense: could not show the fail-open message")
 
     @pyqtSlot(str, result=str)
     def activate(self, code: str) -> str:
@@ -188,7 +206,16 @@ class PrintessLicense(QObject, Extension):
 
     @pyqtSlot()
     def quitApplication(self):
-        """The hard exit the welcome flow uses for 'Decline and close'."""
+        """The hard exit the welcome flow uses for 'Decline and close'.
+
+        Shutting down closes every window, which closes this dialog again,
+        whose handler lands back here; the flag makes that second visit a
+        no-op instead of a second shutdown.
+        """
+        if self._quitting:
+            return
+        self._quitting = True
+        self.statusChanged.emit()
         Logger.log("i", "PrintessLicense: no code entered; closing")
         try:
             from cura.CuraApplication import CuraApplication
@@ -300,4 +327,4 @@ class PrintessLicense(QObject, Extension):
         # st_birthtime: macOS always, Windows on Python 3.12+. On Windows
         # st_ctime is the creation time as well, so the fallback matches.
         stamp = getattr(st, "st_birthtime", None) or st.st_ctime
-        return datetime.datetime.fromtimestamp(stamp)
+        return datetime.datetime.fromtimestamp(stamp, tz=datetime.timezone.utc)

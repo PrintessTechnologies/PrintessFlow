@@ -74,7 +74,7 @@ UM.Dialog
     }
     onClosing: (close) =>
     {
-        if (manager.gating)
+        if (manager.gating && !manager.quitting)
         {
             close.accepted = false
             manager.quitApplication()
